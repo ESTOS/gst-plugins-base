@@ -19,6 +19,7 @@
 
 /**
  * SECTION:element-vorbisdec
+ * @title: vorbisdec
  * @see_also: vorbisenc, oggdemux
  *
  * This element decodes a Vorbis stream to raw float audio.
@@ -27,13 +28,12 @@
  * Foundation</ulink>. As it outputs raw float audio you will often need to
  * put an audioconvert element after it.
  *
- *
- * <refsect2>
- * <title>Example pipelines</title>
+ * ## Example pipelines
  * |[
  * gst-launch-1.0 -v filesrc location=sine.ogg ! oggdemux ! vorbisdec ! audioconvert ! audioresample ! autoaudiosink
- * ]| Decode an Ogg/Vorbis. To create an Ogg/Vorbis file refer to the documentation of vorbisenc.
- * </refsect2>
+ * ]|
+ *  Decode an Ogg/Vorbis. To create an Ogg/Vorbis file refer to the documentation of vorbisenc.
+ *
  */
 
 #ifdef HAVE_CONFIG_H
@@ -79,22 +79,21 @@ static GstFlowReturn vorbis_dec_handle_frame (GstAudioDecoder * dec,
     GstBuffer * buffer);
 static void vorbis_dec_flush (GstAudioDecoder * dec, gboolean hard);
 static gboolean vorbis_dec_set_format (GstAudioDecoder * dec, GstCaps * caps);
+static void vorbis_dec_reset (GstAudioDecoder * dec);
 
 static void
 gst_vorbis_dec_class_init (GstVorbisDecClass * klass)
 {
-  GstPadTemplate *src_template, *sink_template;
   GObjectClass *gobject_class = G_OBJECT_CLASS (klass);
   GstElementClass *element_class = GST_ELEMENT_CLASS (klass);
   GstAudioDecoderClass *base_class = GST_AUDIO_DECODER_CLASS (klass);
 
   gobject_class->finalize = vorbis_dec_finalize;
 
-  src_template = gst_static_pad_template_get (&vorbis_dec_src_factory);
-  gst_element_class_add_pad_template (element_class, src_template);
-
-  sink_template = gst_static_pad_template_get (&vorbis_dec_sink_factory);
-  gst_element_class_add_pad_template (element_class, sink_template);
+  gst_element_class_add_static_pad_template (element_class,
+      &vorbis_dec_src_factory);
+  gst_element_class_add_static_pad_template (element_class,
+      &vorbis_dec_sink_factory);
 
   gst_element_class_set_static_metadata (element_class,
       "Vorbis audio decoder", "Codec/Decoder/Audio",
@@ -160,6 +159,10 @@ vorbis_dec_stop (GstAudioDecoder * dec)
   vorbis_dsp_clear (&vd->vd);
   vorbis_comment_clear (&vd->vc);
   vorbis_info_clear (&vd->vi);
+  if (vd->pending_headers) {
+    g_list_free_full (vd->pending_headers, (GDestroyNotify) gst_buffer_unref);
+    vd->pending_headers = NULL;
+  }
 
   return TRUE;
 }
@@ -396,6 +399,14 @@ vorbis_dec_handle_header_caps (GstVorbisDec * vd)
     GstBuffer *buf = NULL;
     gint i = 0;
 
+    if (vd->pending_headers) {
+      GST_DEBUG_OBJECT (vd,
+          "got new headers from caps, discarding old pending headers");
+
+      g_list_free_full (vd->pending_headers, (GDestroyNotify) gst_buffer_unref);
+      vd->pending_headers = NULL;
+    }
+
     while (result == GST_FLOW_OK && i < gst_value_array_get_size (array)) {
       value = gst_value_array_get_value (array, i);
       buf = gst_value_get_buffer (value);
@@ -548,6 +559,92 @@ wrong_samples:
 }
 
 static GstFlowReturn
+check_pending_headers (GstVorbisDec * vd)
+{
+  GstBuffer *buffer1, *buffer3, *buffer5;
+  GstMapInfo map;
+  gboolean isvalid;
+  GList *tmp = vd->pending_headers;
+  GstFlowReturn result = GST_FLOW_OK;
+
+  if (g_list_length (vd->pending_headers) < MIN_NUM_HEADERS)
+    goto not_enough;
+
+  buffer1 = (GstBuffer *) tmp->data;
+  tmp = tmp->next;
+  buffer3 = (GstBuffer *) tmp->data;
+  tmp = tmp->next;
+  buffer5 = (GstBuffer *) tmp->data;
+
+  /* Start checking the headers */
+  gst_buffer_map (buffer1, &map, GST_MAP_READ);
+  isvalid = map.size >= 1 && map.data[0] == 0x01;
+  gst_buffer_unmap (buffer1, &map);
+  if (!isvalid) {
+    GST_WARNING_OBJECT (vd, "Pending first header was invalid");
+    goto cleanup;
+  }
+
+  gst_buffer_map (buffer3, &map, GST_MAP_READ);
+  isvalid = map.size >= 1 && map.data[0] == 0x03;
+  gst_buffer_unmap (buffer3, &map);
+  if (!isvalid) {
+    GST_WARNING_OBJECT (vd, "Pending second header was invalid");
+    goto cleanup;
+  }
+
+  gst_buffer_map (buffer5, &map, GST_MAP_READ);
+  isvalid = map.size >= 1 && map.data[0] == 0x05;
+  gst_buffer_unmap (buffer5, &map);
+  if (!isvalid) {
+    GST_WARNING_OBJECT (vd, "Pending third header was invalid");
+    goto cleanup;
+  }
+
+  /* Discard any other pending headers */
+  if (tmp->next) {
+    GST_DEBUG_OBJECT (vd, "Discarding extra headers");
+    g_list_free_full (tmp->next, (GDestroyNotify) gst_buffer_unref);
+    tmp->next = NULL;
+  }
+  g_list_free (vd->pending_headers);
+  vd->pending_headers = NULL;
+
+  GST_DEBUG_OBJECT (vd, "Resetting and processing new headers");
+
+  /* All good, let's reset ourselves and process the headers */
+  vorbis_dec_reset ((GstAudioDecoder *) vd);
+  result = vorbis_dec_handle_header_buffer (vd, buffer1);
+  if (result != GST_FLOW_OK) {
+    gst_buffer_unref (buffer3);
+    gst_buffer_unref (buffer5);
+    return result;
+  }
+  result = vorbis_dec_handle_header_buffer (vd, buffer3);
+  if (result != GST_FLOW_OK) {
+    gst_buffer_unref (buffer5);
+    return result;
+  }
+  result = vorbis_dec_handle_header_buffer (vd, buffer5);
+
+  return result;
+
+  /* ERRORS */
+cleanup:
+  {
+    g_list_free_full (vd->pending_headers, (GDestroyNotify) gst_buffer_unref);
+    vd->pending_headers = NULL;
+    return result;
+  }
+not_enough:
+  {
+    GST_LOG_OBJECT (vd,
+        "Not enough pending headers to properly reset, ignoring them");
+    goto cleanup;
+  }
+}
+
+static GstFlowReturn
 vorbis_dec_handle_frame (GstAudioDecoder * dec, GstBuffer * buffer)
 {
   ogg_packet *packet;
@@ -583,17 +680,49 @@ vorbis_dec_handle_frame (GstAudioDecoder * dec, GstBuffer * buffer)
 
   /* switch depending on packet type */
   if ((gst_ogg_packet_data (packet))[0] & 1) {
-    if (vd->initialized) {
-      GST_WARNING_OBJECT (vd, "Already initialized, so ignoring header packet");
-      goto done;
+    gboolean have_all_headers;
+
+    GST_LOG_OBJECT (vd, "storing header for later analyzis");
+
+    /* An identification packet starts a new set of headers */
+    if (vd->pending_headers && (gst_ogg_packet_data (packet))[0] == 0x01) {
+      GST_DEBUG_OBJECT (vd,
+          "got new identification header packet, discarding old pending headers");
+
+      g_list_free_full (vd->pending_headers, (GDestroyNotify) gst_buffer_unref);
+      vd->pending_headers = NULL;
     }
-    result = vorbis_handle_header_packet (vd, packet);
-    if (result != GST_FLOW_OK)
-      goto done;
-    /* consumer header packet/frame */
-    result = gst_audio_decoder_finish_frame (GST_AUDIO_DECODER (vd), NULL, 1);
+
+    /* if we have more than 3 headers with the new one and the new one is the
+     * type header, we can initialize the decoder now */
+    have_all_headers = g_list_length (vd->pending_headers) >= 2
+        && (gst_ogg_packet_data (packet))[0] == 0x05;
+
+    if (!vd->pending_headers && (gst_ogg_packet_data (packet))[0] != 0x01) {
+      if (vd->initialized) {
+        GST_DEBUG_OBJECT (vd,
+            "Got another non-identification header after initialization, ignoring");
+      } else {
+        GST_WARNING_OBJECT (vd,
+            "First header was not a identification header, dropping");
+      }
+      result = gst_audio_decoder_finish_frame (GST_AUDIO_DECODER (vd), NULL, 1);
+    } else {
+      vd->pending_headers =
+          g_list_append (vd->pending_headers, gst_buffer_ref (buffer));
+      result = gst_audio_decoder_finish_frame (GST_AUDIO_DECODER (vd), NULL, 1);
+    }
+
+    if (result == GST_FLOW_OK && have_all_headers) {
+      result = check_pending_headers (vd);
+    }
   } else {
     GstClockTime timestamp, duration;
+
+    if (vd->pending_headers)
+      result = check_pending_headers (vd);
+    if (G_UNLIKELY (result != GST_FLOW_OK))
+      goto done;
 
     timestamp = GST_BUFFER_TIMESTAMP (buffer);
     duration = GST_BUFFER_DURATION (buffer);
@@ -635,6 +764,23 @@ vorbis_dec_flush (GstAudioDecoder * dec, gboolean hard)
 #endif
 }
 
+static void
+vorbis_dec_reset (GstAudioDecoder * dec)
+{
+  GstVorbisDec *vd = GST_VORBIS_DEC (dec);
+
+  vd->initialized = FALSE;
+#ifndef USE_TREMOLO
+  vorbis_block_clear (&vd->vb);
+#endif
+  vorbis_dsp_clear (&vd->vd);
+
+  vorbis_comment_clear (&vd->vc);
+  vorbis_info_clear (&vd->vi);
+  vorbis_info_init (&vd->vi);
+  vorbis_comment_init (&vd->vc);
+}
+
 static gboolean
 vorbis_dec_set_format (GstAudioDecoder * dec, GstCaps * caps)
 {
@@ -646,18 +792,9 @@ vorbis_dec_set_format (GstAudioDecoder * dec, GstCaps * caps)
   if (!vd->initialized)
     return TRUE;
 
-  vd->initialized = FALSE;
-#ifndef USE_TREMOLO
-  vorbis_block_clear (&vd->vb);
-#endif
-  vorbis_dsp_clear (&vd->vd);
-
-  /* We need to free and re-init these,
-   * or libvorbis chokes */
-  vorbis_comment_clear (&vd->vc);
-  vorbis_info_clear (&vd->vi);
-  vorbis_info_init (&vd->vi);
-  vorbis_comment_init (&vd->vc);
+  /* We need to free and re-init libvorbis,
+   * or it chokes */
+  vorbis_dec_reset (dec);
 
   return TRUE;
 }

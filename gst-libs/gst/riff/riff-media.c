@@ -824,6 +824,8 @@ gst_riff_create_video_caps (guint32 codec_fcc,
     case GST_MAKE_FOURCC ('V', 'M', 'n', 'c'):
       caps = gst_caps_new_simple ("video/x-vmnc",
           "version", G_TYPE_INT, 1, NULL);
+      if (strf && strf->bit_cnt != 0)
+        gst_caps_set_simple (caps, "bpp", G_TYPE_INT, strf->bit_cnt, NULL);
       if (codec_name)
         *codec_name = g_strdup ("VMWare NC Video");
       break;
@@ -1203,8 +1205,6 @@ gst_riff_create_audio_caps (guint16 codec_id,
 {
   gboolean block_align = FALSE, rate_chan = TRUE;
   GstCaps *caps = NULL;
-  gint rate_min = 1000, rate_max = 96000;
-  gint channels_max = 2;
   gint i;
 
   if (channel_reorder_map)
@@ -1213,9 +1213,6 @@ gst_riff_create_audio_caps (guint16 codec_id,
 
   switch (codec_id) {
     case GST_RIFF_WAVE_FORMAT_PCM:     /* PCM */
-      rate_max = 192000;
-      channels_max = 8;
-
       if (strf != NULL) {
         gint ba = strf->blockalign;
         gint ch = strf->channels;
@@ -1299,28 +1296,31 @@ gst_riff_create_audio_caps (guint16 codec_id,
       break;
 
     case GST_RIFF_WAVE_FORMAT_IEEE_FLOAT:
-      rate_max = 192000;
-      channels_max = 8;
-
       if (strf != NULL) {
         gint ba = strf->blockalign;
         gint ch = strf->channels;
-        gint wd = ba * 8 / ch;
 
-        caps = gst_caps_new_simple ("audio/x-raw",
-            "format", G_TYPE_STRING, wd == 64 ? "F64LE" : "F32LE",
-            "layout", G_TYPE_STRING, "interleaved",
-            "channels", G_TYPE_INT, ch, NULL);
+        if (ba > 0 && ch > 0 && (ba == (64 / 8) * ch || ba == (32 / 8) * ch)) {
+          gint wd = ba * 8 / ch;
 
-        /* Add default channel layout. We know no default layout for more than
-         * 8 channels. */
-        if (ch > 8)
-          GST_WARNING ("don't know default layout for %d channels", ch);
-        else if (gst_riff_wave_add_default_channel_mask (caps, ch,
-                channel_reorder_map))
-          GST_DEBUG ("using default channel layout for %d channels", ch);
-        else
-          GST_WARNING ("failed to add channel layout");
+          caps = gst_caps_new_simple ("audio/x-raw",
+              "format", G_TYPE_STRING, wd == 64 ? "F64LE" : "F32LE",
+              "layout", G_TYPE_STRING, "interleaved",
+              "channels", G_TYPE_INT, ch, NULL);
+
+          /* Add default channel layout. We know no default layout for more than
+           * 8 channels. */
+          if (ch > 8)
+            GST_WARNING ("don't know default layout for %d channels", ch);
+          else if (gst_riff_wave_add_default_channel_mask (caps, ch,
+                  channel_reorder_map))
+            GST_DEBUG ("using default channel layout for %d channels", ch);
+          else
+            GST_WARNING ("failed to add channel layout");
+        } else {
+          GST_WARNING ("invalid block align %d or channel count %d", ba, ch);
+          return NULL;
+        }
       } else {
         /* FIXME: this is pretty useless - we need fixed caps */
         caps = gst_caps_from_string ("audio/x-raw, "
@@ -1351,7 +1351,6 @@ gst_riff_create_audio_caps (guint16 codec_id,
           strf->av_bps = strf->blockalign * strf->rate;
         }
       }
-      rate_max = 48000;
       caps = gst_caps_new_empty_simple ("audio/x-alaw");
       if (codec_name)
         *codec_name = g_strdup ("A-law audio");
@@ -1389,7 +1388,6 @@ gst_riff_create_audio_caps (guint16 codec_id,
           strf->av_bps = strf->blockalign * strf->rate;
         }
       }
-      rate_max = 48000;
       caps = gst_caps_new_empty_simple ("audio/x-mulaw");
       if (codec_name)
         *codec_name = g_strdup ("Mu-law audio");
@@ -1419,10 +1417,13 @@ gst_riff_create_audio_caps (guint16 codec_id,
       block_align = TRUE;
       break;
 
+    case GST_RIFF_WAVE_FORMAT_ADPCM_G722:
+      caps = gst_caps_new_empty_simple ("audio/G722");
+      if (codec_name)
+        *codec_name = g_strdup ("G722 audio");
+      break;
+
     case GST_RIFF_WAVE_FORMAT_ITU_G726_ADPCM:
-      rate_min = 8000;
-      rate_max = 8000;
-      channels_max = 1;
       if (strf != NULL) {
         gint bitrate;
         bitrate = 0;
@@ -1451,8 +1452,6 @@ gst_riff_create_audio_caps (guint16 codec_id,
       break;
 
     case GST_RIFF_WAVE_FORMAT_DSP_TRUESPEECH:
-      rate_min = 8000;
-      rate_max = 8000;
       caps = gst_caps_new_empty_simple ("audio/x-truespeech");
       if (codec_name)
         *codec_name = g_strdup ("DSP Group TrueSpeech");
@@ -1460,15 +1459,12 @@ gst_riff_create_audio_caps (guint16 codec_id,
 
     case GST_RIFF_WAVE_FORMAT_GSM610:
     case GST_RIFF_WAVE_FORMAT_MSN:
-      rate_min = 1;
       caps = gst_caps_new_empty_simple ("audio/ms-gsm");
       if (codec_name)
         *codec_name = g_strdup ("MS GSM audio");
       break;
 
     case GST_RIFF_WAVE_FORMAT_MPEGL12: /* mp1 or mp2 */
-      rate_min = 16000;
-      rate_max = 48000;
       caps = gst_caps_new_simple ("audio/mpeg",
           "mpegversion", G_TYPE_INT, 1, "layer", G_TYPE_INT, 2, NULL);
       if (codec_name)
@@ -1476,8 +1472,6 @@ gst_riff_create_audio_caps (guint16 codec_id,
       break;
 
     case GST_RIFF_WAVE_FORMAT_MPEGL3:  /* mp3 */
-      rate_min = 8000;
-      rate_max = 48000;
       caps = gst_caps_new_simple ("audio/mpeg",
           "mpegversion", G_TYPE_INT, 1, "layer", G_TYPE_INT, 3, NULL);
       if (codec_name)
@@ -1485,18 +1479,12 @@ gst_riff_create_audio_caps (guint16 codec_id,
       break;
 
     case GST_RIFF_WAVE_FORMAT_AMR_NB:  /* amr-nb */
-      rate_min = 8000;
-      rate_max = 8000;
-      channels_max = 1;
       caps = gst_caps_new_empty_simple ("audio/AMR");
       if (codec_name)
         *codec_name = g_strdup ("AMR Narrow Band (NB)");
       break;
 
     case GST_RIFF_WAVE_FORMAT_AMR_WB:  /* amr-wb */
-      rate_min = 16000;
-      rate_max = 16000;
-      channels_max = 1;
       caps = gst_caps_new_empty_simple ("audio/AMR-WB");
       if (codec_name)
         *codec_name = g_strdup ("AMR Wide Band (WB)");
@@ -1508,20 +1496,17 @@ gst_riff_create_audio_caps (guint16 codec_id,
     case GST_RIFF_WAVE_FORMAT_VORBIS1PLUS:     /* ogg/vorbis mode 1+ */
     case GST_RIFF_WAVE_FORMAT_VORBIS2PLUS:     /* ogg/vorbis mode 2+ */
     case GST_RIFF_WAVE_FORMAT_VORBIS3PLUS:     /* ogg/vorbis mode 3+ */
-      rate_max = 192000;
       caps = gst_caps_new_empty_simple ("audio/x-vorbis");
       if (codec_name)
         *codec_name = g_strdup ("Vorbis");
       break;
 
     case GST_RIFF_WAVE_FORMAT_A52:
-      channels_max = 6;
       caps = gst_caps_new_empty_simple ("audio/x-ac3");
       if (codec_name)
         *codec_name = g_strdup ("AC-3 audio");
       break;
     case GST_RIFF_WAVE_FORMAT_DTS:
-      channels_max = 6;
       caps = gst_caps_new_empty_simple ("audio/x-dts");
       if (codec_name)
         *codec_name = g_strdup ("DTS audio");
@@ -1532,7 +1517,6 @@ gst_riff_create_audio_caps (guint16 codec_id,
     case GST_RIFF_WAVE_FORMAT_AAC_AC:
     case GST_RIFF_WAVE_FORMAT_AAC_pm:
     {
-      channels_max = 8;
       caps = gst_caps_new_simple ("audio/mpeg",
           "mpegversion", G_TYPE_INT, 4, NULL);
       if (codec_name)
@@ -1546,7 +1530,6 @@ gst_riff_create_audio_caps (guint16 codec_id,
     {
       gint version = (codec_id - GST_RIFF_WAVE_FORMAT_WMAV1) + 1;
 
-      channels_max = 8;
       block_align = TRUE;
 
       caps = gst_caps_new_simple ("audio/x-wma",
@@ -1583,9 +1566,6 @@ gst_riff_create_audio_caps (guint16 codec_id,
       break;
 
     case GST_RIFF_WAVE_FORMAT_ADPCM_IMA_DK4:
-      rate_min = 8000;
-      rate_max = 96000;
-      channels_max = 2;
       caps =
           gst_caps_new_simple ("audio/x-adpcm", "layout", G_TYPE_STRING, "dk4",
           NULL);
@@ -1593,9 +1573,6 @@ gst_riff_create_audio_caps (guint16 codec_id,
         *codec_name = g_strdup ("IMA/DK4 ADPCM");
       break;
     case GST_RIFF_WAVE_FORMAT_ADPCM_IMA_DK3:
-      rate_min = 8000;
-      rate_max = 96000;
-      channels_max = 2;
       caps =
           gst_caps_new_simple ("audio/x-adpcm", "layout", G_TYPE_STRING, "dk3",
           NULL);
@@ -1604,9 +1581,6 @@ gst_riff_create_audio_caps (guint16 codec_id,
       break;
 
     case GST_RIFF_WAVE_FORMAT_ADPCM_IMA_WAV:
-      rate_min = 8000;
-      rate_max = 96000;
-      channels_max = 2;
       caps =
           gst_caps_new_simple ("audio/x-adpcm", "layout", G_TYPE_STRING, "dvi",
           NULL);
@@ -1620,14 +1594,17 @@ gst_riff_create_audio_caps (guint16 codec_id,
       GstMapInfo info;
       gsize size;
 
-      channels_max = 8;
+      if (strf_data == NULL) {
+        GST_WARNING ("WAVE_FORMAT_EXTENSIBLE but no strf_data buffer provided");
+        return NULL;
+      }
 
       /* should be at least 22 bytes */
       size = gst_buffer_get_size (strf_data);
 
-      if (strf_data == NULL || size < 22) {
+      if (size < 22) {
         GST_WARNING ("WAVE_FORMAT_EXTENSIBLE data size is %" G_GSIZE_FORMAT
-            " (expected: 22)", (strf_data) ? size : -1);
+            " (expected: 22)", size);
         return NULL;
       }
 
@@ -1649,7 +1626,8 @@ gst_riff_create_audio_caps (guint16 codec_id,
           subformat_guid[2] == 0xaa000080 && subformat_guid[3] == 0x719b3800) {
         if (subformat_guid[0] == 0x00000001) {
           GST_DEBUG ("PCM");
-          if (strf != NULL) {
+          if (strf != NULL && strf->blockalign != 0 && strf->channels != 0
+              && strf->rate != 0) {
             gint ba = strf->blockalign;
             gint wd = ba * 8 / strf->channels;
             gint ws;
@@ -1682,7 +1660,8 @@ gst_riff_create_audio_caps (guint16 codec_id,
           }
         } else if (subformat_guid[0] == 0x00000003) {
           GST_DEBUG ("FLOAT");
-          if (strf != NULL) {
+          if (strf != NULL && strf->blockalign != 0 && strf->channels != 0
+              && strf->rate != 0) {
             gint ba = strf->blockalign;
             gint wd = ba * 8 / strf->channels;
 
@@ -1716,7 +1695,6 @@ gst_riff_create_audio_caps (guint16 codec_id,
               strf->blockalign = strf->av_bps * strf->channels;
             }
           }
-          rate_max = 48000;
           caps = gst_caps_new_empty_simple ("audio/x-alaw");
 
           if (codec_name)
@@ -1739,7 +1717,6 @@ gst_riff_create_audio_caps (guint16 codec_id,
               strf->blockalign = strf->av_bps * strf->channels;
             }
           }
-          rate_max = 48000;
           caps = gst_caps_new_empty_simple ("audio/x-mulaw");
           if (codec_name)
             *codec_name = g_strdup ("Mu-law audio");
@@ -1749,7 +1726,8 @@ gst_riff_create_audio_caps (guint16 codec_id,
           caps = gst_caps_new_empty_simple ("audio/x-ac3");
           if (codec_name)
             *codec_name = g_strdup ("wavext AC-3 SPDIF audio");
-        } else if (subformat_guid[0] == GST_RIFF_WAVE_FORMAT_EXTENSIBLE) {
+        } else if ((subformat_guid[0] & 0xffff) ==
+            GST_RIFF_WAVE_FORMAT_EXTENSIBLE) {
           GST_DEBUG ("WAVE_FORMAT_EXTENSIBLE nested");
         } else {
           /* recurse where no special consideration has yet to be identified 
@@ -1774,6 +1752,11 @@ gst_riff_create_audio_caps (guint16 codec_id,
           *codec_name = g_strdup ("Ogg-AVI");
       }
 
+      if (caps == NULL) {
+        GST_WARNING ("Unknown WAVE_FORMAT_EXTENSIBLE audio format");
+        return NULL;
+      }
+
       if (strf != NULL) {
         /* If channel_mask == 0 and channels > 1 let's
          * assume default layout as some wav files don't have the
@@ -1792,10 +1775,6 @@ gst_riff_create_audio_caps (guint16 codec_id,
         rate_chan = FALSE;
       }
 
-      if (caps == NULL) {
-        GST_WARNING ("Unknown WAVE_FORMAT_EXTENSIBLE audio format");
-        return NULL;
-      }
       break;
     }
       /* can anything decode these? pitfdll? */
@@ -1824,11 +1803,6 @@ gst_riff_create_audio_caps (guint16 codec_id,
 
   if (strf != NULL) {
     if (rate_chan) {
-      if (strf->channels > channels_max)
-        goto too_many_channels;
-      if (strf->rate < rate_min || strf->rate > rate_max)
-        goto invalid_rate;
-
       gst_caps_set_simple (caps,
           "rate", G_TYPE_INT, strf->rate,
           "channels", G_TYPE_INT, strf->channels, NULL);
@@ -1838,18 +1812,6 @@ gst_riff_create_audio_caps (guint16 codec_id,
           "block_align", G_TYPE_INT, strf->blockalign, NULL);
     }
   } else {
-    if (rate_chan) {
-      if (rate_min == rate_max)
-        gst_caps_set_simple (caps, "rate", G_TYPE_INT, rate_min, NULL);
-      else
-        gst_caps_set_simple (caps,
-            "rate", GST_TYPE_INT_RANGE, rate_min, rate_max, NULL);
-      if (channels_max == 1)
-        gst_caps_set_simple (caps, "channels", G_TYPE_INT, 1, NULL);
-      else
-        gst_caps_set_simple (caps,
-            "channels", GST_TYPE_INT_RANGE, 1, channels_max, NULL);
-    }
     if (block_align) {
       gst_caps_set_simple (caps,
           "block_align", GST_TYPE_INT_RANGE, 1, G_MAXINT, NULL);
@@ -1863,20 +1825,6 @@ gst_riff_create_audio_caps (guint16 codec_id,
   }
 
   return caps;
-
-  /* ERROR */
-too_many_channels:
-  GST_WARNING
-      ("Stream claims to contain %u channels, but format only supports %d",
-      strf->channels, channels_max);
-  gst_caps_unref (caps);
-  return NULL;
-invalid_rate:
-  GST_WARNING
-      ("Stream with sample_rate %u, but format only supports %d .. %d",
-      strf->rate, rate_min, rate_max);
-  gst_caps_unref (caps);
-  return NULL;
 }
 
 GstCaps *

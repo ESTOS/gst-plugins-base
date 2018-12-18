@@ -22,6 +22,7 @@
 
 /**
  * SECTION:element-theoraenc
+ * @title: theoraenc
  * @see_also: theoradec, oggmux
  *
  * This element encodes raw video into a Theora stream.
@@ -45,14 +46,14 @@
  * A videorate element is often required in front of theoraenc, especially
  * when transcoding and when putting Theora into the Ogg container.
  *
- * <refsect2>
- * <title>Example pipeline</title>
+ * ## Example pipeline
  * |[
  * gst-launch-1.0 -v videotestsrc num-buffers=500 ! video/x-raw,width=1280,height=720 ! queue ! progressreport ! theoraenc ! oggmux ! filesink location=videotestsrc.ogg
- * ]| This example pipeline will encode a test video source to theora muxed in an
+ * ]|
+ *  This example pipeline will encode a test video source to theora muxed in an
  * ogg container. Refer to the theoradec documentation to decode the create
  * stream.
- * </refsect2>
+ *
  */
 
 #ifdef HAVE_CONFIG_H
@@ -212,13 +213,12 @@ gst_theora_enc_class_init (GstTheoraEncClass * klass)
   gobject_class->get_property = theora_enc_get_property;
   gobject_class->finalize = theora_enc_finalize;
 
-  gst_element_class_add_pad_template (element_class,
-      gst_static_pad_template_get (&theora_enc_src_factory));
-  gst_element_class_add_pad_template (element_class,
-      gst_static_pad_template_get (&theora_enc_sink_factory));
-  gst_element_class_set_static_metadata (element_class,
-      "Theora video encoder", "Codec/Encoder/Video",
-      "encode raw YUV video to a theora stream",
+  gst_element_class_add_static_pad_template (element_class,
+      &theora_enc_src_factory);
+  gst_element_class_add_static_pad_template (element_class,
+      &theora_enc_sink_factory);
+  gst_element_class_set_static_metadata (element_class, "Theora video encoder",
+      "Codec/Encoder/Video", "encode raw YUV video to a theora stream",
       "Wim Taymans <wim@fluendo.com>");
 
   gstvideo_encoder_class->start = GST_DEBUG_FUNCPTR (theora_enc_start);

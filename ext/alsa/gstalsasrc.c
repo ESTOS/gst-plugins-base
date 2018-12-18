@@ -21,16 +21,17 @@
 
 /**
  * SECTION:element-alsasrc
+ * @title: alsasrc
  * @see_also: alsasink
  *
  * This element reads data from an audio card using the ALSA API.
  *
- * <refsect2>
- * <title>Example pipelines</title>
+ * ## Example pipelines
  * |[
  * gst-launch-1.0 -v alsasrc ! queue ! audioconvert ! vorbisenc ! oggmux ! filesink location=alsasrc.ogg
- * ]| Record from a sound card using ALSA and encode to Ogg/Vorbis.
- * </refsect2>
+ * ]|
+ *  Record from a sound card using ALSA and encode to Ogg/Vorbis.
+ *
  */
 
 #ifdef HAVE_CONFIG_H
@@ -142,8 +143,8 @@ gst_alsasrc_class_init (GstAlsaSrcClass * klass)
       "Audio source (ALSA)", "Source/Audio",
       "Read from a sound card via ALSA", "Wim Taymans <wim@fluendo.com>");
 
-  gst_element_class_add_pad_template (gstelement_class,
-      gst_static_pad_template_get (&alsasrc_src_factory));
+  gst_element_class_add_static_pad_template (gstelement_class,
+      &alsasrc_src_factory);
 
   gstbasesrc_class->get_caps = GST_DEBUG_FUNCPTR (gst_alsasrc_getcaps);
 
@@ -236,8 +237,11 @@ gst_alsasrc_change_state (GstElement * element, GstStateChange transition)
     case GST_STATE_CHANGE_PLAYING_TO_PAUSED:
     case GST_STATE_CHANGE_PAUSED_TO_READY:
     case GST_STATE_CHANGE_READY_TO_NULL:
+    case GST_STATE_CHANGE_NULL_TO_NULL:
+    case GST_STATE_CHANGE_READY_TO_READY:
+    case GST_STATE_CHANGE_PAUSED_TO_PAUSED:
+    case GST_STATE_CHANGE_PLAYING_TO_PLAYING:
       break;
-
     case GST_STATE_CHANGE_PAUSED_TO_PLAYING:
       alsa->driver_timestamps = FALSE;
 
@@ -785,16 +789,8 @@ gst_alsasrc_prepare (GstAudioSrc * asrc, GstAudioRingBufferSpec * spec)
   }
 
 #ifdef SND_CHMAP_API_VERSION
-  if (spec->type == GST_AUDIO_RING_BUFFER_FORMAT_TYPE_RAW && alsa->channels < 9) {
-    snd_pcm_chmap_t *chmap = snd_pcm_get_chmap (alsa->handle);
-    if (chmap && chmap->channels == alsa->channels) {
-      GstAudioChannelPosition pos[8];
-      if (alsa_chmap_to_channel_positions (chmap, pos))
-        gst_audio_ring_buffer_set_channel_positions (GST_AUDIO_BASE_SRC
-            (alsa)->ringbuffer, pos);
-    }
-    free (chmap);
-  }
+  alsa_detect_channels_mapping (GST_OBJECT (alsa), alsa->handle, spec,
+      alsa->channels, GST_AUDIO_BASE_SRC (alsa)->ringbuffer);
 #endif /* SND_CHMAP_API_VERSION */
 
   return TRUE;

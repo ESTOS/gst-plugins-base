@@ -37,7 +37,7 @@ typedef gboolean (*GstVideoAffineTransformationGetMatrix) (GstVideoAffineTransfo
 #define GST_BUFFER_POOL_OPTION_VIDEO_AFFINE_TRANSFORMATION_META "GstBufferPoolOptionVideoAffineTransformation"
 
 /**
- * GstVideoAffineTransformation:
+ * GstVideoAffineTransformationMeta:
  * @meta: parent #GstMeta
  * @matrix: the column-major 4x4 transformation matrix
  *
@@ -45,9 +45,15 @@ typedef gboolean (*GstVideoAffineTransformationGetMatrix) (GstVideoAffineTransfo
  * matrix. The transformation matrix can be composed with
  * gst_video_affine_transformation_meta_apply_matrix().
  *
+ * The vertices operated on are all in the range 0 to 1, not in
+ * Normalized Device Coordinates (-1 to +1). Transforming points in this space
+ * are assumed to have an origin at (0.5, 0.5, 0.5) in a left-handed coordinate
+ * system with the x-axis moving horizontally (positive values to the right),
+ * the y-axis moving vertically (positive values up the screen) and the z-axis
+ * perpendicular to the screen (positive values into the screen).
+ *
  * Since: 1.8
  */
-
 struct _GstVideoAffineTransformationMeta
 {
   GstMeta meta;
@@ -55,13 +61,18 @@ struct _GstVideoAffineTransformationMeta
   gfloat matrix[16];
 };
 
+GST_VIDEO_API
 GType gst_video_affine_transformation_meta_api_get_type          (void);
+
+GST_VIDEO_API
 const GstMetaInfo *gst_video_affine_transformation_meta_get_info (void);
 
 #define gst_buffer_get_video_affine_transformation_meta(b) \
     ((GstVideoAffineTransformationMeta *)gst_buffer_get_meta((b),GST_VIDEO_AFFINE_TRANSFORMATION_META_API_TYPE))
+GST_VIDEO_API
 GstVideoAffineTransformationMeta *gst_buffer_add_video_affine_transformation_meta (GstBuffer * buffer);
 
+GST_VIDEO_API
 void gst_video_affine_transformation_meta_apply_matrix                           (GstVideoAffineTransformationMeta * meta,
                                                                                   const gfloat matrix[16]);
 

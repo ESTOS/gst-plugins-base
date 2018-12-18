@@ -42,8 +42,9 @@
 
 /**
  * SECTION:gstrtspurl
+ * @title: GstRTSPUrl
  * @short_description: handling RTSP urls
- *  
+ *
  * Provides helper functions to handle RTSP urls.
  */
 
@@ -136,9 +137,9 @@ gst_rtsp_url_parse (const gchar * urlstr, GstRTSPUrl ** url)
     if (col == NULL || col > at)
       goto invalid;
 
-    res->user = g_strndup (p, col - p);
+    res->user = g_uri_unescape_segment (p, col, NULL);
     col++;
-    res->passwd = g_strndup (col, at - col);
+    res->passwd = g_uri_unescape_segment (col, at, NULL);
 
     /* move to host */
     p = at + 1;
@@ -283,7 +284,7 @@ gst_rtsp_url_set_port (GstRTSPUrl * url, guint16 port)
 /**
  * gst_rtsp_url_get_port:
  * @url: a #GstRTSPUrl
- * @port: location to hold the port
+ * @port: (out): location to hold the port
  *
  * Get the port number of @url.
  *
@@ -308,7 +309,7 @@ gst_rtsp_url_get_port (const GstRTSPUrl * url, guint16 * port)
  * gst_rtsp_url_get_request_uri:
  * @url: a #GstRTSPUrl
  *
- * Get a newly allocated string describing the request URI for @url. 
+ * Get a newly allocated string describing the request URI for @url.
  *
  * Returns: a string with the request URI. g_free() after usage.
  */

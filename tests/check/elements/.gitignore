@@ -4,11 +4,15 @@ alsa
 appsink
 appsrc
 audioconvert
+audiointerleave
+audiomixer
 audiorate
 audioresample
 audiotestsrc
 decodebin
 encodebin
+glbin
+glimagesink
 libvisual
 multifdsink
 multisocketsink
@@ -21,6 +25,7 @@ typefindfunctions
 textoverlay
 videoconvert
 videoscale
+videoscale-[1-6]
 vorbistag
 playbin
 playbin-compressed
@@ -28,3 +33,5 @@ playbin-complex
 playsink
 streamsynchronizer
 subparse
+rawaudioparse
+rawvideoparse

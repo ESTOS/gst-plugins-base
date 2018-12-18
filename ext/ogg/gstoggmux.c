@@ -20,17 +20,18 @@
 
 /**
  * SECTION:element-oggmux
+ * @title: oggmux
  * @see_also: <link linkend="gst-plugins-base-plugins-oggdemux">oggdemux</link>
  *
  * This element merges streams (audio and video) into ogg files.
  *
- * <refsect2>
- * <title>Example pipelines</title>
+ * ## Example pipelines
  * |[
  * gst-launch-1.0 v4l2src num-buffers=500 ! video/x-raw,width=320,height=240 ! videoconvert ! videorate ! theoraenc ! oggmux ! filesink location=video.ogg
- * ]| Encodes a video stream captured from a v4l2-compatible camera to Ogg/Theora
+ * ]|
+ * Encodes a video stream captured from a v4l2-compatible camera to Ogg/Theora
  * (the encoding will stop automatically after 500 frames)
- * </refsect2>
+ *
  */
 
 #ifdef HAVE_CONFIG_H
@@ -150,14 +151,13 @@ gst_ogg_mux_class_init (GstOggMuxClass * klass)
   gobject_class->get_property = gst_ogg_mux_get_property;
   gobject_class->set_property = gst_ogg_mux_set_property;
 
-  gst_element_class_add_pad_template (gstelement_class,
-      gst_static_pad_template_get (&src_factory));
-  gst_element_class_add_pad_template (gstelement_class,
-      gst_static_pad_template_get (&video_sink_factory));
-  gst_element_class_add_pad_template (gstelement_class,
-      gst_static_pad_template_get (&audio_sink_factory));
-  gst_element_class_add_pad_template (gstelement_class,
-      gst_static_pad_template_get (&subtitle_sink_factory));
+  gst_element_class_add_static_pad_template (gstelement_class, &src_factory);
+  gst_element_class_add_static_pad_template (gstelement_class,
+      &video_sink_factory);
+  gst_element_class_add_static_pad_template (gstelement_class,
+      &audio_sink_factory);
+  gst_element_class_add_static_pad_template (gstelement_class,
+      &subtitle_sink_factory);
 
   gst_element_class_set_static_metadata (gstelement_class,
       "Ogg muxer", "Codec/Muxer",
@@ -808,6 +808,7 @@ gst_ogg_mux_decorate_buffer (GstOggMux * ogg_mux, GstOggPadData * pad,
   GstMapInfo map;
   ogg_packet packet;
   gboolean end_clip = TRUE;
+  GstAudioClippingMeta *meta;
 
   /* ensure messing with metadata is ok */
   buf = gst_buffer_make_writable (buf);
@@ -871,6 +872,21 @@ gst_ogg_mux_decorate_buffer (GstOggMux * ogg_mux, GstOggPadData * pad,
     end_time =
         gst_ogg_stream_granule_to_time (&pad->map,
         pad->next_granule + duration);
+    meta = gst_buffer_get_audio_clipping_meta (buf);
+    if (meta && meta->end) {
+      if (meta->format == GST_FORMAT_DEFAULT) {
+        if (meta->end > duration) {
+          GST_WARNING_OBJECT (pad->collect.pad,
+              "Clip meta tries to clip more sample than exist in the buffer, clipping all");
+          duration = 0;
+        } else {
+          duration -= meta->end;
+        }
+      } else {
+        GST_WARNING_OBJECT (pad->collect.pad,
+            "Unsupported format in clip meta");
+      }
+    }
     if (end_time > pad->segment.stop
         && !GST_CLOCK_TIME_IS_VALID (gst_segment_to_running_time (&pad->segment,
                 GST_FORMAT_TIME, pad->segment.start + end_time))) {
@@ -953,14 +969,14 @@ no_granule:
 
 
 /* make sure at least one buffer is queued on all pads, two if possible
- * 
+ *
  * if pad->buffer == NULL, pad->next_buffer !=  NULL, then
  *   we do not know if the buffer is the last or not
  * if pad->buffer != NULL, pad->next_buffer != NULL, then
  *   pad->buffer is not the last buffer for the pad
  * if pad->buffer != NULL, pad->next_buffer == NULL, then
  *   pad->buffer if the last buffer for the pad
- * 
+ *
  * returns a pointer to an oggpad that holds the best buffer, or
  * NULL when no pad was usable. "best" means the buffer marked
  * with the lowest timestamp. If best->buffer == NULL then either
@@ -1394,7 +1410,7 @@ gst_ogg_mux_make_fistail (GstOggMux * mux, ogg_stream_state * os)
  * page that allows decoders to identify the type of the stream.
  * After that we need to write out all extra info for the decoders.
  * In the case of a codec that also needs data as configuration, we can
- * find that info in the streamcaps. 
+ * find that info in the streamcaps.
  * After writing the headers we must start a new page for the data.
  */
 static GstFlowReturn
@@ -2019,11 +2035,11 @@ gst_ogg_mux_send_start_events (GstOggMux * ogg_mux, GstCollectPads * pads)
 }
 
 /* This function is called when there is data on all pads.
- * 
+ *
  * It finds a pad to pull on, this is done by looking at the buffers
  * to decide which one to use, and using the 'oldest' one first. It then calls
  * gst_ogg_mux_process_best_pad() to process as much data as possible.
- * 
+ *
  * If all the pads have received EOS, it flushes out all data by continually
  * getting the best pad and calling gst_ogg_mux_process_best_pad() until they
  * are all empty, and then sends EOS.

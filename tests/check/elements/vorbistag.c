@@ -19,8 +19,10 @@
  * Free Software Foundation, Inc., 51 Franklin St, Fifth Floor,
  * Boston, MA 02110-1301, USA.
  */
+#ifdef HAVE_CONFIG_H
+#include "config.h"
+#endif
 
-#include <unistd.h>
 #include <glib.h>
 
 #include <vorbis/codec.h>
@@ -118,6 +120,7 @@ cleanup_vorbistag (GstElement * vorbistag)
 
   gst_pad_set_active (mysrcpad, FALSE);
   gst_pad_set_active (mysinkpad, FALSE);
+  gst_check_drop_buffers ();
   gst_check_teardown_src_pad (vorbistag);
   gst_check_teardown_sink_pad (vorbistag);
   gst_check_teardown_element (vorbistag);

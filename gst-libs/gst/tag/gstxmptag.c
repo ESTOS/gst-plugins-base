@@ -22,6 +22,7 @@
 
 /**
  * SECTION:gsttagxmp
+ * @title: GstXmptag
  * @short_description: tag mappings and support functions for plugins
  *                     dealing with xmp packets
  * @see_also: #GstTagList
@@ -484,7 +485,8 @@ deserialize_exif_gps_coordinate (XmpTag * xmptag, GstTagList * taglist,
 
   /* check if it uses ,SS or .mm */
   if (strchr (current, ',') != NULL) {
-    sscanf (current, "%d,%d%c", &m, &s, &c);
+    if (!sscanf (current, "%d,%d%c", &m, &s, &c))
+      goto error;
   } else {
     gchar *copy = g_strdup (current);
     gint len = strlen (copy);
@@ -1313,6 +1315,7 @@ gst_tag_list_from_xmp_buffer (GstBuffer * buffer)
                 }
                 if (ns_match[i].ns_prefix) {
                   if (strcmp (ns_map[i].original_ns, &as[6])) {
+                    g_free (ns_map[i].gstreamer_ns);
                     ns_map[i].gstreamer_ns = g_strdup (&as[6]);
                   }
                 }
@@ -1695,7 +1698,8 @@ write_one_tag (const GstTagList * list, XmpTag * xmp_tag, gpointer user_data)
  * gst_tag_list_to_xmp_buffer:
  * @list: tags
  * @read_only: does the container forbid inplace editing
- * @schemas: %NULL terminated array of schemas to be used on serialization
+ * @schemas: (array zero-terminated):
+ *     %NULL terminated array of schemas to be used on serialization
  *
  * Formats a taglist as a xmp packet using only the selected
  * schemas. An empty list (%NULL) means that all schemas should

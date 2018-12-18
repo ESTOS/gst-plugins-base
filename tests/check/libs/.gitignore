@@ -4,8 +4,19 @@ audio
 audiocdsrc
 audiodecoder
 audioencoder
+baseaudiovisualizer
 discoverer
 fft
+gstglcolorconvert
+gstglcontext
+gstglheaders
+gstglmatrix
+gstglmemory
+gstglquery
+gstglshader
+gstglsl
+gstglslstage
+gstglupload
 gstlibscpp
 libsabi
 mikey
@@ -24,4 +35,5 @@ utils
 video
 videodecoder
 videoencoder
+videotimecode
 xmpwriter

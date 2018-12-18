@@ -19,6 +19,7 @@
 
 /**
  * SECTION:element-uridecodebin
+ * @title: uridecodebin
  *
  * Decodes data from a URI into raw media. It selects a source element that can
  * handle the given #GstURIDecodeBin:uri scheme and connects it to a decodebin.
@@ -41,9 +42,7 @@
 #include "gstplay-enum.h"
 #include "gstrawcaps.h"
 #include "gstplayback.h"
-
-/* From gstdecodebin2.c */
-gint _decode_bin_compare_factories_func (gconstpointer p1, gconstpointer p2);
+#include "gstplaybackutils.h"
 
 #define GST_TYPE_URI_DECODE_BIN \
   (gst_uri_decode_bin_get_type())
@@ -321,7 +320,7 @@ gst_uri_decode_bin_update_factories_list (GstURIDecodeBin * dec)
         gst_element_factory_list_get_elements
         (GST_ELEMENT_FACTORY_TYPE_DECODABLE, GST_RANK_MARGINAL);
     dec->factories =
-        g_list_sort (dec->factories, _decode_bin_compare_factories_func);
+        g_list_sort (dec->factories, gst_playback_utils_compare_factories_func);
     dec->factories_cookie = cookie;
   }
 }
@@ -456,8 +455,6 @@ gst_uri_decode_bin_class_init (GstURIDecodeBinClass * klass)
    * When download buffering is activated and used for the current media
    * type, this property does nothing. Otherwise perform buffering on the
    * demuxed or parsed media.
-   *
-   * Since: 0.10.26
    */
   g_object_class_install_property (gobject_class, PROP_USE_BUFFERING,
       g_param_spec_boolean ("use-buffering", "Use Buffering",
@@ -472,9 +469,7 @@ gst_uri_decode_bin_class_init (GstURIDecodeBinClass * klass)
    * If set to %FALSE, then only the streams that can be decoded to the final
    * caps (see 'caps' property) will have a pad exposed. Streams that do not
    * match those caps but could have been decoded will not have decoder plugged
-   * in internally and will not have a pad exposed. 
-   *
-   * Since: 0.10.30
+   * in internally and will not have a pad exposed.
    */
   g_object_class_install_property (gobject_class, PROP_EXPOSE_ALL_STREAMS,
       g_param_spec_boolean ("expose-all-streams", "Expose All Streams",
@@ -487,8 +482,6 @@ gst_uri_decode_bin_class_init (GstURIDecodeBinClass * klass)
    *
    * The maximum size of the ring buffer in kilobytes. If set to 0, the ring
    * buffer is disabled. Default is 0.
-   *
-   * Since: 0.10.31
    */
   g_object_class_install_property (gobject_class, PROP_RING_BUFFER_MAX_SIZE,
       g_param_spec_uint64 ("ring-buffer-max-size",
@@ -522,14 +515,12 @@ gst_uri_decode_bin_class_init (GstURIDecodeBinClass * klass)
    * This signal is emitted whenever uridecodebin finds a new stream. It is
    * emitted before looking for any elements that can handle that stream.
    *
-   * <note>
-   *   Invocation of signal handlers stops after the first signal handler
-   *   returns #FALSE. Signal handlers are invoked in the order they were
-   *   connected in.
-   * </note>
+   * >   Invocation of signal handlers stops after the first signal handler
+   * >   returns %FALSE. Signal handlers are invoked in the order they were
+   * >   connected in.
    *
-   * Returns: #TRUE if you wish uridecodebin to look for elements that can
-   * handle the given @caps. If #FALSE, those caps will be considered as
+   * Returns: %TRUE if you wish uridecodebin to look for elements that can
+   * handle the given @caps. If %FALSE, those caps will be considered as
    * final and the pad will be exposed as such (see 'pad-added' signal of
    * #GstElement).
    */
@@ -555,11 +546,9 @@ gst_uri_decode_bin_class_init (GstURIDecodeBinClass * klass)
    * If this function returns an empty array, the pad will be considered as
    * having an unhandled type media type.
    *
-   * <note>
-   *   Only the signal handler that is connected first will ever by invoked.
-   *   Don't connect signal handlers with the #G_CONNECT_AFTER flag to this
-   *   signal, they will never be invoked!
-   * </note>
+   * >   Only the signal handler that is connected first will ever by invoked.
+   * >   Don't connect signal handlers with the #G_CONNECT_AFTER flag to this
+   * >   signal, they will never be invoked!
    *
    * Returns: a #GValueArray* with a list of factories to try. The factories are
    * by default tried in the returned order or based on the index returned by
@@ -584,20 +573,16 @@ gst_uri_decode_bin_class_init (GstURIDecodeBinClass * klass)
    * the application to perform additional sorting or filtering on the element
    * factory array.
    *
-   * The callee should copy and modify @factories or return #NULL if the
+   * The callee should copy and modify @factories or return %NULL if the
    * order should not change.
    *
-   * <note>
-   *   Invocation of signal handlers stops after one signal handler has
-   *   returned something else than #NULL. Signal handlers are invoked in
-   *   the order they were connected in.
-   *   Don't connect signal handlers with the #G_CONNECT_AFTER flag to this
-   *   signal, they will never be invoked!
-   * </note>
+   * >   Invocation of signal handlers stops after one signal handler has
+   * >   returned something else than %NULL. Signal handlers are invoked in
+   * >   the order they were connected in.
+   * >   Don't connect signal handlers with the #G_CONNECT_AFTER flag to this
+   * >   signal, they will never be invoked!
    *
    * Returns: A new sorted array of #GstElementFactory objects.
-   *
-   * Since: 0.10.33
    */
   gst_uri_decode_bin_signals[SIGNAL_AUTOPLUG_SORT] =
       g_signal_new ("autoplug-sort", G_TYPE_FROM_CLASS (klass),
@@ -629,13 +614,11 @@ gst_uri_decode_bin_class_init (GstURIDecodeBinClass * klass)
    * A value of #GST_AUTOPLUG_SELECT_SKIP will skip @factory and move to the
    * next factory.
    *
-   * <note>
-   *   The signal handler will not be invoked if any of the previously
-   *   registered signal handlers (if any) return a value other than
-   *   GST_AUTOPLUG_SELECT_TRY. Which also means that if you return
-   *   GST_AUTOPLUG_SELECT_TRY from one signal handler, handlers that get
-   *   registered next (again, if any) can override that decision.
-   * </note>
+   * >   The signal handler will not be invoked if any of the previously
+   * >   registered signal handlers (if any) return a value other than
+   * >   GST_AUTOPLUG_SELECT_TRY. Which also means that if you return
+   * >   GST_AUTOPLUG_SELECT_TRY from one signal handler, handlers that get
+   * >   registered next (again, if any) can override that decision.
    *
    * Returns: a #GST_TYPE_AUTOPLUG_SELECT_RESULT that indicates the required
    * operation. The default handler will always return
@@ -661,7 +644,7 @@ gst_uri_decode_bin_class_init (GstURIDecodeBinClass * klass)
    * be used to tell the element about the downstream supported caps
    * for example.
    *
-   * Returns: #TRUE if the query was handled, #FALSE otherwise.
+   * Returns: %TRUE if the query was handled, %FALSE otherwise.
    */
   gst_uri_decode_bin_signals[SIGNAL_AUTOPLUG_QUERY] =
       g_signal_new ("autoplug-query", G_TYPE_FROM_CLASS (klass),
@@ -691,16 +674,13 @@ gst_uri_decode_bin_class_init (GstURIDecodeBinClass * klass)
    * proxy server for an http source, or set the device and read speed for
    * an audio cd source). This is functionally equivalent to connecting to
    * the notify::source signal, but more convenient.
-   *
-   * Since: 0.10.33
    */
   gst_uri_decode_bin_signals[SIGNAL_SOURCE_SETUP] =
       g_signal_new ("source-setup", G_TYPE_FROM_CLASS (klass),
       G_SIGNAL_RUN_LAST, 0, NULL, NULL,
       g_cclosure_marshal_generic, G_TYPE_NONE, 1, GST_TYPE_ELEMENT);
 
-  gst_element_class_add_pad_template (gstelement_class,
-      gst_static_pad_template_get (&srctemplate));
+  gst_element_class_add_static_pad_template (gstelement_class, &srctemplate);
   gst_element_class_set_static_metadata (gstelement_class,
       "URI Decoder", "Generic/Bin/Decoder",
       "Autoplug and decode an URI to raw media",
@@ -743,6 +723,8 @@ gst_uri_decode_bin_init (GstURIDecodeBin * dec)
   dec->ring_buffer_max_size = DEFAULT_RING_BUFFER_MAX_SIZE;
 
   GST_OBJECT_FLAG_SET (dec, GST_ELEMENT_FLAG_SOURCE);
+  gst_bin_set_suppressed_flags (GST_BIN (dec),
+      GST_ELEMENT_FLAG_SOURCE | GST_ELEMENT_FLAG_SINK);
 }
 
 static void
@@ -1648,6 +1630,11 @@ remove_decoders (GstURIDecodeBin * bin, gboolean force)
     GstElement *decoder = GST_ELEMENT_CAST (walk->data);
 
     GST_DEBUG_OBJECT (bin, "removing old decoder element");
+
+    /* Even if we reuse this decodebin, the previous topology will
+     * be irrelevant */
+    g_object_set_data (G_OBJECT (decoder), "uridecodebin-topology", NULL);
+
     if (force) {
       gst_element_set_state (decoder, GST_STATE_NULL);
       gst_bin_remove (GST_BIN_CAST (bin), decoder);
@@ -1683,9 +1670,6 @@ remove_decoders (GstURIDecodeBin * bin, gboolean force)
     bin->pending_decodebins = NULL;
 
   }
-
-  /* Don't loose the SOURCE flag */
-  GST_OBJECT_FLAG_SET (bin, GST_ELEMENT_FLAG_SOURCE);
 }
 
 static void
@@ -2063,8 +2047,6 @@ could_not_link:
     GST_ELEMENT_ERROR (decoder, CORE, NEGOTIATION,
         (NULL), ("Can't link source to typefind element"));
     gst_bin_remove (GST_BIN_CAST (decoder), typefind);
-    /* Don't loose the SOURCE flag */
-    GST_OBJECT_FLAG_SET (decoder, GST_ELEMENT_FLAG_SOURCE);
     do_async_done (decoder);
     return FALSE;
   }
@@ -2113,8 +2095,6 @@ remove_source (GstURIDecodeBin * bin)
     g_hash_table_destroy (bin->streams);
     bin->streams = NULL;
   }
-  /* Don't loose the SOURCE flag */
-  GST_OBJECT_FLAG_SET (bin, GST_ELEMENT_FLAG_SOURCE);
 }
 
 /* is called when a dynamic source element created a new pad. */
@@ -2407,6 +2387,54 @@ handle_redirect_message (GstURIDecodeBin * dec, GstMessage * msg)
   return new_msg;
 }
 
+static GstMessage *
+make_topology_message (GstURIDecodeBin * dec)
+{
+  GSList *tmp;
+  GstStructure *aggregated_topology = NULL;
+  GValue list = G_VALUE_INIT;
+  GstCaps *caps = NULL;
+  gchar *name, *proto;
+
+  aggregated_topology = gst_structure_new_empty ("stream-topology");
+  g_value_init (&list, GST_TYPE_LIST);
+
+  for (tmp = dec->decodebins; tmp; tmp = tmp->next) {
+    GValue item = G_VALUE_INIT;
+    GstStructure *dec_topology =
+        g_object_get_data (G_OBJECT (tmp->data), "uridecodebin-topology");
+
+    g_value_init (&item, GST_TYPE_STRUCTURE);
+    gst_value_set_structure (&item, dec_topology);
+    gst_value_list_append_and_take_value (&list, &item);
+  }
+
+  gst_structure_take_value (aggregated_topology, "next", &list);
+
+  /* This is a bit wacky, but that's the best way I can find to express
+   * uridecodebin 'caps' as subsequently shown by gst-discoverer */
+  proto = gst_uri_get_protocol (dec->uri);
+  name = g_strdup_printf ("application/%s", proto);
+  g_free (proto);
+
+  caps = gst_caps_new_empty_simple (name);
+  g_free (name);
+
+  gst_structure_set (aggregated_topology, "caps", GST_TYPE_CAPS, caps, NULL);
+  gst_caps_unref (caps);
+
+  return gst_message_new_element (GST_OBJECT (dec), aggregated_topology);
+}
+
+static void
+check_topology (gpointer data, gpointer user_data)
+{
+  gboolean *has_topo = user_data;
+
+  if (g_object_get_data (data, "uridecodebin-topology") == NULL)
+    *has_topo = FALSE;
+}
+
 static void
 handle_message (GstBin * bin, GstMessage * msg)
 {
@@ -2414,7 +2442,32 @@ handle_message (GstBin * bin, GstMessage * msg)
 
   switch (GST_MESSAGE_TYPE (msg)) {
     case GST_MESSAGE_ELEMENT:{
-      if (gst_message_has_name (msg, "redirect")) {
+
+      if (gst_message_has_name (msg, "stream-topology")) {
+        GstElement *element = GST_ELEMENT (GST_MESSAGE_SRC (msg));
+        gboolean has_all_topo = TRUE;
+
+        if (dec->pending || (dec->decodebins && dec->decodebins->next != NULL)) {
+          const GstStructure *structure;
+
+          /* If there is only one, just let it through, so this case is if
+           * there is more than one.
+           */
+
+          structure = gst_message_get_structure (msg);
+
+          g_object_set_data_full (G_OBJECT (element), "uridecodebin-topology",
+              gst_structure_copy (structure),
+              (GDestroyNotify) gst_structure_free);
+
+          gst_message_unref (msg);
+          msg = NULL;
+
+          g_slist_foreach (dec->decodebins, check_topology, &has_all_topo);
+          if (has_all_topo)
+            msg = make_topology_message (dec);
+        }
+      } else if (gst_message_has_name (msg, "redirect")) {
         /* sort redirect messages based on the connection speed. This simplifies
          * the user of this element as it can in most cases just pick the first item
          * of the sorted list as a good redirection candidate. It can of course

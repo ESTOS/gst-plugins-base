@@ -18,22 +18,24 @@
  */
 /**
  * SECTION:element-audiotestsrc
+ * @title: audiotestsrc
  *
  * AudioTestSrc can be used to generate basic audio signals. It support several
  * different waveforms and allows to set the base frequency and volume.
  *
- * <refsect2>
- * <title>Example launch line</title>
+ * ## Example launch line
  * |[
  * gst-launch-1.0 audiotestsrc ! audioconvert ! autoaudiosink
- * ]| This pipeline produces a sine with default frequency, 440 Hz, and the
+ * ]|
+ *  This pipeline produces a sine with default frequency, 440 Hz, and the
  * default volume, 0.8 (relative to a maximum 1.0).
  * |[
  * gst-launch-1.0 audiotestsrc wave=2 freq=200 ! tee name=t ! queue ! audioconvert ! autoaudiosink t. ! queue ! audioconvert ! libvisual_lv_scope ! videoconvert ! autovideosink
- * ]| In this example a saw wave is generated. The wave is shown using a
+ * ]|
+ *  In this example a saw wave is generated. The wave is shown using a
  * scope visualizer from libvisual, allowing you to visually verify that
  * the saw wave is correct.
- * </refsect2>
+ *
  */
 
 #ifdef HAVE_CONFIG_H
@@ -207,10 +209,10 @@ gst_audio_test_src_class_init (GstAudioTestSrcClass * klass)
           "Can activate in pull mode", DEFAULT_CAN_ACTIVATE_PULL,
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
-  gst_element_class_add_pad_template (gstelement_class,
-      gst_static_pad_template_get (&gst_audio_test_src_src_template));
-  gst_element_class_set_static_metadata (gstelement_class,
-      "Audio test source", "Source/Audio",
+  gst_element_class_add_static_pad_template (gstelement_class,
+      &gst_audio_test_src_src_template);
+  gst_element_class_set_static_metadata (gstelement_class, "Audio test source",
+      "Source/Audio",
       "Creates audio test signals of given frequency and volume",
       "Stefan Kost <ensonic@users.sf.net>");
 
@@ -735,7 +737,7 @@ static const ProcessFunc sine_table_funcs[] = {
 static void \
 gst_audio_test_src_create_tick_##type (GstAudioTestSrc * src, g##type * samples) \
 { \
-  gint i, c, channels, samplerate; \
+  gint i, c, channels, samplerate, samplemod; \
   gdouble step, scl; \
   \
   channels = GST_AUDIO_INFO_CHANNELS (&src->info); \
@@ -744,17 +746,20 @@ gst_audio_test_src_create_tick_##type (GstAudioTestSrc * src, g##type * samples)
   scl = 1024.0 / M_PI_M2; \
   \
   for (i = 0; i < src->generate_samples_per_buffer; i++) { \
-    src->accumulator += step; \
-    if (src->accumulator >= M_PI_M2) \
-      src->accumulator -= M_PI_M2; \
-    \
-    if ((src->next_sample + i)%samplerate < 1600) { \
+    samplemod = (src->next_sample + i) % samplerate; \
+    if (samplemod == 0) { \
+      src->accumulator = 0; \
+    } else if (samplemod < 1600) { \
       for (c = 0; c < channels; ++c) \
         samples[(i * channels) + c] = (g##type) scale * src->wave_table[(gint) (src->accumulator * scl)]; \
     } else { \
       for (c = 0; c < channels; ++c) \
         samples[(i * channels) + c] = 0; \
     } \
+    \
+    src->accumulator += step; \
+    if (src->accumulator >= M_PI_M2) \
+      src->accumulator -= M_PI_M2; \
   } \
 }
 
@@ -1123,18 +1128,13 @@ gst_audio_test_src_do_seek (GstBaseSrc * basesrc, GstSegment * segment)
 
   src->next_sample = next_sample;
 
-  if (!src->reverse) {
-    if (GST_CLOCK_TIME_IS_VALID (segment->start)) {
-      segment->time = segment->start;
-    }
-  } else {
-    if (GST_CLOCK_TIME_IS_VALID (segment->stop)) {
-      segment->time = segment->stop;
-    }
-  }
-
-  if (GST_CLOCK_TIME_IS_VALID (segment->stop)) {
+  if (segment->rate > 0 && GST_CLOCK_TIME_IS_VALID (segment->stop)) {
     time = segment->stop;
+    src->sample_stop =
+        gst_util_uint64_scale_round (time, samplerate, GST_SECOND);
+    src->check_seek_stop = TRUE;
+  } else if (segment->rate < 0) {
+    time = segment->start;
     src->sample_stop =
         gst_util_uint64_scale_round (time, samplerate, GST_SECOND);
     src->check_seek_stop = TRUE;
@@ -1212,9 +1212,16 @@ gst_audio_test_src_fill (GstBaseSrc * basesrc, guint64 offset,
   }
 
   /* check for eos */
-  if (src->check_seek_stop &&
+  if (src->check_seek_stop && !src->reverse &&
       (src->sample_stop > src->next_sample) &&
       (src->sample_stop < src->next_sample + samples)
+      ) {
+    /* calculate only partial buffer */
+    src->generate_samples_per_buffer = src->sample_stop - src->next_sample;
+    next_sample = src->sample_stop;
+    src->eos_reached = TRUE;
+  } else if (src->check_seek_stop && src->reverse &&
+      (src->sample_stop > src->next_sample)
       ) {
     /* calculate only partial buffer */
     src->generate_samples_per_buffer = src->sample_stop - src->next_sample;

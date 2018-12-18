@@ -35,7 +35,7 @@ FIXXREF_OPTIONS=--extra-dir=$(top_builddir)/docs/libs/html \
 
 # Used for dependencies.
 HFILE_GLOB=$(top_srcdir)/gst/*/*.h $(top_srcdir)/ext/*/*.h $(top_srcdir)/sys/*/*.h
-CFILE_GLOB=$(top_srcdir)/gst/*/*.c $(top_srcdir)/ext/*/*.c $(top_srcdir)/sys/*/*.c
+CFILE_GLOB=$(top_srcdir)/gst/*/*.c $(top_srcdir)/ext/*/*.c $(top_srcdir)/sys/*/*.c $(top_srcdir)/ext/*/*.m
 
 # Header files to ignore when scanning.
 IGNORE_HFILES = avcodec.h dsputil.h arch.h speex_resampler.h speex_resampler_wrapper.h fixed_arm4.h fixed_arm5e.h fixed_bfin.h fixed_debug.h fixed_generic.h resample_sse.h
@@ -55,6 +55,8 @@ EXTRA_HFILES = \
 	$(top_srcdir)/ext/cdparanoia/gstcdparanoiasrc.h \
 	$(top_srcdir)/ext/ogg/gstoggdemux.h \
 	$(top_srcdir)/ext/ogg/gstoggmux.h \
+	$(top_srcdir)/ext/opus/gstopusdec.h \
+	$(top_srcdir)/ext/opus/gstopusenc.h \
 	$(top_srcdir)/ext/pango/gstclockoverlay.h \
 	$(top_srcdir)/ext/pango/gsttextoverlay.h \
 	$(top_srcdir)/ext/pango/gsttextrender.h \
@@ -68,6 +70,8 @@ EXTRA_HFILES = \
 	$(top_srcdir)/ext/vorbis/gstvorbistag.h \
 	$(top_srcdir)/gst/adder/gstadder.h \
 	$(top_srcdir)/gst/audioconvert/gstaudioconvert.h \
+	$(top_srcdir)/gst/audiorate/gstaudiorate.h \
+	$(top_srcdir)/gst/audioresample/gstaudioresample.h \
 	$(top_srcdir)/gst/audiotestsrc/gstaudiotestsrc.h \
 	$(top_srcdir)/gst/encoding/gstencodebin.h \
 	$(top_srcdir)/gst/gio/gstgiosink.h \
@@ -75,16 +79,27 @@ EXTRA_HFILES = \
 	$(top_srcdir)/gst/gio/gstgiostreamsink.h \
 	$(top_srcdir)/gst/gio/gstgiostreamsrc.h \
 	$(top_srcdir)/gst/playback/gstplay-enum.h \
+	$(top_srcdir)/gst/playback/gstplaysink.h \
+	$(top_srcdir)/gst/playback/gststreamsynchronizer.h \
 	$(top_srcdir)/gst/playback/gstsubtitleoverlay.h \
 	$(top_srcdir)/gst/audiorate/gstaudiorate.h \
 	$(top_srcdir)/gst/audioresample/gstaudioresample.h \
+	$(top_srcdir)/gst/rawparse/gstrawaudioparse.h \
+	$(top_srcdir)/gst/rawparse/gstrawvideoparse.h \
+	$(top_srcdir)/gst/rawparse/gstunalignedaudioparse.h \
+	$(top_srcdir)/gst/rawparse/gstunalignedvideoparse.h \
+	$(top_srcdir)/gst/subparse/gstssaparse.h \
+	$(top_srcdir)/gst/subparse/gstsubparse.h \
+	$(top_srcdir)/gst/tcp/gstmultifdsink.h \
+	$(top_srcdir)/gst/tcp/gstmultihandlesink.h \
 	$(top_srcdir)/gst/tcp/gstmultisocketsink.h \
 	$(top_srcdir)/gst/tcp/gstsocketsrc.h \
-	$(top_srcdir)/gst/tcp/gsttcpclientsrc.h \
 	$(top_srcdir)/gst/tcp/gsttcpclientsink.h \
-	$(top_srcdir)/gst/tcp/gsttcpserversrc.h \
-	$(top_srcdir)/gst/tcp/gsttcpserversink.h \
+	$(top_srcdir)/gst/tcp/gsttcpclientsrc.h \
 	$(top_srcdir)/gst/tcp/gsttcp.h \
+	$(top_srcdir)/gst/tcp/gsttcpserversink.h \
+	$(top_srcdir)/gst/tcp/gsttcpserversrc.h \
+	$(top_srcdir)/gst/videoconvert/gstvideoconvert.h \
 	$(top_srcdir)/gst/videorate/gstvideorate.h \
 	$(top_srcdir)/gst/videoscale/gstvideoscale.h \
 	$(top_srcdir)/gst/videotestsrc/gstvideotestsrc.h \

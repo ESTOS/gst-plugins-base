@@ -20,6 +20,7 @@
 
 /**
  * SECTION:element-xvimagesink
+ * @title: xvimagesink
  *
  * XvImageSink renders video frames to a drawable (XWindow) on a local display
  * using the XVideo extension. Rendering to a remote display is theoretically
@@ -30,20 +31,17 @@
  * application, the element will create its own internal window and render
  * into it.
  *
- * <refsect2>
- * <title>Scaling</title>
- * <para>
+ * ## Scaling
+ *
  * The XVideo extension, when it's available, handles hardware accelerated
  * scaling of video frames. This means that the element will just accept
  * incoming video frames no matter their geometry and will then put them to the
  * drawable scaling them on the fly. Using the #GstXvImageSink:force-aspect-ratio
  * property it is possible to enforce scaling with a constant aspect ratio,
  * which means drawing black borders around the video frame.
- * </para>
- * </refsect2>
- * <refsect2>
- * <title>Events</title>
- * <para>
+ *
+ * ## Events
+ *
  * XvImageSink creates a thread to handle events coming from the drawable. There
  * are several kind of events that can be grouped in 2 big categories: input
  * events and window state related events. Input events will be translated to
@@ -53,11 +51,9 @@
  * is not flowing (GST_STATE_PAUSED). That means that even when the element is
  * paused, it will receive expose events from the drawable and draw the latest
  * frame with correct borders/aspect-ratio.
- * </para>
- * </refsect2>
- * <refsect2>
- * <title>Pixel aspect ratio</title>
- * <para>
+ *
+ * ## Pixel aspect ratio
+ *
  * When changing state to GST_STATE_READY, XvImageSink will open a connection to
  * the display specified in the #GstXvImageSink:display property or the
  * default display if nothing specified. Once this connection is open it will
@@ -68,26 +64,27 @@
  * Sometimes the calculated pixel aspect ratio can be wrong, it is
  * then possible to enforce a specific pixel aspect ratio using the
  * #GstXvImageSink:pixel-aspect-ratio property.
- * </para>
- * </refsect2>
- * <refsect2>
- * <title>Examples</title>
+ *
+ * ## Examples
  * |[
  * gst-launch-1.0 -v videotestsrc ! xvimagesink
- * ]| A pipeline to test hardware scaling.
+ * ]|
+ *  A pipeline to test hardware scaling.
  * When the test video signal appears you can resize the window and see that
  * video frames are scaled through hardware (no extra CPU cost). By default
  * the image will never be distorted when scaled, instead black borders will
  * be added if needed.
  * |[
  * gst-launch-1.0 -v videotestsrc ! xvimagesink force-aspect-ratio=false
- * ]| Same pipeline with #GstXvImageSink:force-aspect-ratio property set to
+ * ]|
+ *  Same pipeline with #GstXvImageSink:force-aspect-ratio property set to
  * false. You can observe that no borders are drawn around the scaled image
  * now and it will be distorted to fill the entire frame instead of respecting
  * the aspect ratio.
  * |[
  * gst-launch-1.0 -v videotestsrc ! navigationtest ! xvimagesink
- * ]| A pipeline to test navigation events.
+ * ]|
+ *  A pipeline to test navigation events.
  * While moving the mouse pointer over the test signal you will see a black box
  * following the mouse pointer. If you press the mouse button somewhere on the
  * video and release it somewhere else a green box will appear where you pressed
@@ -99,15 +96,17 @@
  * image area
  * |[
  * gst-launch-1.0 -v videotestsrc ! video/x-raw, pixel-aspect-ratio=4/3 ! xvimagesink
- * ]| This is faking a 4/3 pixel aspect ratio caps on video frames produced by
+ * ]|
+ *  This is faking a 4/3 pixel aspect ratio caps on video frames produced by
  * videotestsrc, in most cases the pixel aspect ratio of the display will be
  * 1/1. This means that XvImageSink will have to do the scaling to convert
  * incoming frames to a size that will match the display pixel aspect ratio
  * (from 320x240 to 320x180 in this case).
  * |[
  * gst-launch-1.0 -v videotestsrc ! xvimagesink hue=100 saturation=-100 brightness=100
- * ]| Demonstrates how to use the colorbalance interface.
- * </refsect2>
+ * ]|
+ *  Demonstrates how to use the colorbalance interface.
+ *
  */
 
 /* for developers: there are two useful tools : xvinfo and xvattr */
@@ -134,8 +133,8 @@
 #include <X11/XKBlib.h>
 
 GST_DEBUG_CATEGORY_EXTERN (gst_debug_xv_image_sink);
-GST_DEBUG_CATEGORY_EXTERN (CAT_PERFORMANCE);
 #define GST_CAT_DEFAULT gst_debug_xv_image_sink
+GST_DEBUG_CATEGORY_STATIC (GST_CAT_PERFORMANCE);
 
 typedef struct
 {
@@ -186,7 +185,8 @@ enum
   PROP_COLORKEY,
   PROP_DRAW_BORDERS,
   PROP_WINDOW_WIDTH,
-  PROP_WINDOW_HEIGHT
+  PROP_WINDOW_HEIGHT,
+  PROP_LAST
 };
 
 /* ============================================================= */
@@ -408,7 +408,7 @@ static void
 gst_xv_image_sink_handle_xevents (GstXvImageSink * xvimagesink)
 {
   XEvent e;
-  guint pointer_x = 0, pointer_y = 0;
+  gint pointer_x = 0, pointer_y = 0;
   gboolean pointer_moved = FALSE;
   gboolean exposed = FALSE, configured = FALSE;
 
@@ -793,6 +793,13 @@ gst_xv_image_sink_setcaps (GstBaseSink * bsink, GstCaps * caps)
         GST_VIDEO_SINK_HEIGHT (xvimagesink));
   }
 
+  if (xvimagesink->pending_render_rect) {
+    xvimagesink->pending_render_rect = FALSE;
+    gst_xwindow_set_render_rectangle (xvimagesink->xwindow,
+        xvimagesink->render_rect.x, xvimagesink->render_rect.y,
+        xvimagesink->render_rect.w, xvimagesink->render_rect.h);
+  }
+
   xvimagesink->info = info;
 
   /* After a resize, we want to redraw the borders in case the new frame size
@@ -836,7 +843,7 @@ no_disp_ratio:
 no_display_size:
   {
     GST_ELEMENT_ERROR (xvimagesink, CORE, NEGOTIATION, (NULL),
-        ("Error calculating the output display ratio of the video."));
+        ("Error calculating the output display size of the video."));
     return FALSE;
   }
 }
@@ -956,7 +963,7 @@ gst_xv_image_sink_show_frame (GstVideoSink * vsink, GstBuffer * buf)
     if (res != GST_FLOW_OK)
       goto no_buffer;
 
-    GST_CAT_LOG_OBJECT (CAT_PERFORMANCE, xvimagesink,
+    GST_CAT_LOG_OBJECT (GST_CAT_PERFORMANCE, xvimagesink,
         "slow copy buffer %p into bufferpool buffer %p", buf, to_put);
 
     if (!gst_video_frame_map (&src, &xvimagesink->info, buf, GST_MAP_READ))
@@ -1052,6 +1059,7 @@ gst_xv_image_sink_propose_allocation (GstBaseSink * bsink, GstQuery * query)
   GstXvImageSink *xvimagesink = GST_XV_IMAGE_SINK (bsink);
   GstBufferPool *pool = NULL;
   GstCaps *caps;
+  GstVideoInfo info;
   guint size;
   gboolean need_pool;
 
@@ -1060,27 +1068,24 @@ gst_xv_image_sink_propose_allocation (GstBaseSink * bsink, GstQuery * query)
   if (caps == NULL)
     goto no_caps;
 
+  if (!gst_video_info_from_caps (&info, caps))
+    goto invalid_caps;
+
+  /* the normal size of a frame */
+  size = info.size;
+
   if (need_pool) {
-    GstVideoInfo info;
-
-    if (!gst_video_info_from_caps (&info, caps))
-      goto invalid_caps;
-
     GST_DEBUG_OBJECT (xvimagesink, "create new pool");
     pool = gst_xv_image_sink_create_pool (xvimagesink, caps, info.size, 0);
-
-    /* the normal size of a frame */
-    size = info.size;
 
     if (pool == NULL)
       goto no_pool;
   }
 
-  if (pool) {
-    /* we need at least 2 buffer because we hold on to the last one */
-    gst_query_add_allocation_pool (query, pool, size, 2, 0);
+  /* we need at least 2 buffer because we hold on to the last one */
+  gst_query_add_allocation_pool (query, pool, size, 2, 0);
+  if (pool)
     gst_object_unref (pool);
-  }
 
   /* we also support various metadata */
   gst_query_add_allocation_meta (query, GST_VIDEO_META_API_TYPE, NULL);
@@ -1274,9 +1279,16 @@ gst_xv_image_sink_set_render_rectangle (GstVideoOverlay * overlay, gint x,
   GstXvImageSink *xvimagesink = GST_XV_IMAGE_SINK (overlay);
 
   g_mutex_lock (&xvimagesink->flow_lock);
-  if (G_LIKELY (xvimagesink->xwindow))
+  if (G_LIKELY (xvimagesink->xwindow)) {
     gst_xwindow_set_render_rectangle (xvimagesink->xwindow, x, y, width,
         height);
+  } else {
+    xvimagesink->render_rect.x = x;
+    xvimagesink->render_rect.y = y;
+    xvimagesink->render_rect.w = width;
+    xvimagesink->render_rect.h = height;
+    xvimagesink->pending_render_rect = TRUE;
+  }
   g_mutex_unlock (&xvimagesink->flow_lock);
 }
 
@@ -1626,7 +1638,8 @@ gst_xv_image_sink_set_property (GObject * object, guint prop_id,
       xvimagesink->draw_borders = g_value_get_boolean (value);
       break;
     default:
-      G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
+      if (!gst_video_overlay_set_property (object, PROP_LAST, prop_id, value))
+        G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
   }
 }
@@ -1936,6 +1949,9 @@ gst_xv_image_sink_class_init (GstXvImageSinkClass * klass)
       g_param_spec_string ("device-name", "Adaptor name",
           "The name of the video adaptor", NULL,
           G_PARAM_READABLE | G_PARAM_STATIC_STRINGS));
+
+  gst_video_overlay_install_properties (gobject_class, PROP_LAST);
+
   /**
    * GstXvImageSink:handle-expose
    *
@@ -2013,8 +2029,8 @@ gst_xv_image_sink_class_init (GstXvImageSinkClass * klass)
       "Video sink", "Sink/Video",
       "A Xv based videosink", "Julien Moutte <julien@moutte.net>");
 
-  gst_element_class_add_pad_template (gstelement_class,
-      gst_static_pad_template_get (&gst_xv_image_sink_sink_template_factory));
+  gst_element_class_add_static_pad_template (gstelement_class,
+      &gst_xv_image_sink_sink_template_factory);
 
   gstelement_class->change_state =
       GST_DEBUG_FUNCPTR (gst_xv_image_sink_change_state);
@@ -2029,4 +2045,6 @@ gst_xv_image_sink_class_init (GstXvImageSinkClass * klass)
 
   videosink_class->show_frame =
       GST_DEBUG_FUNCPTR (gst_xv_image_sink_show_frame);
+
+  GST_DEBUG_CATEGORY_GET (GST_CAT_PERFORMANCE, "GST_PERFORMANCE");
 }

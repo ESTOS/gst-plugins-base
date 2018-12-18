@@ -1,4 +1,6 @@
 audio-trickplay
+benchmark-appsink
+benchmark-appsrc
 input-selector-test
 output-selector-test
 playbin-text
@@ -13,3 +15,5 @@ test-scale
 test-box
 test-colorkey
 test-videooverlay
+test-resample
+

@@ -31,16 +31,17 @@
 #
 msgid ""
 msgstr ""
-"Project-Id-Version: gst-plugins-base 1.7.90\n"
+"Project-Id-Version: gst-plugins-base 1.10.0\n"
 "Report-Msgid-Bugs-To: http://bugzilla.gnome.org/\n"
-"POT-Creation-Date: 2016-04-20 15:29+0300\n"
-"PO-Revision-Date: 2016-03-27 16:38+0100\n"
+"POT-Creation-Date: 2017-05-04 15:02+0300\n"
+"PO-Revision-Date: 2016-11-03 16:38+0100\n"
 "Last-Translator: Joe Hansen <joedalton2@yahoo.dk>\n"
 "Language-Team: Danish <dansk@dansk-gruppen.dk>\n"
 "Language: da\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
+"X-Bugs: Report translation errors to the Language-Team address.\n"
 
 msgid "Could not open device for playback in mono mode."
 msgstr "Kunne ikke afspille fra enheden i mono-tilstand."
@@ -96,9 +97,6 @@ msgstr "Kunne ikke søge på cd."
 msgid "Could not read CD."
 msgstr "Kunne ikke læse cd."
 
-msgid "Internal data stream error."
-msgstr "Intern datastrømsfejl."
-
 #, c-format
 msgid "Missing element '%s' - check your GStreamer installation."
 msgstr "Elementet »%s« mangler - kontroller din GStreamer-installation."
@@ -111,6 +109,12 @@ msgstr "Denne fremstår som en tekstfil"
 
 msgid "Could not create \"uridecodebin\" element."
 msgstr "Kunne ikke oprette elementet »uridecodebin«."
+
+msgid "Could not create \"decodebin3\" element."
+msgstr "Kunne ikke oprette elementet »decodebin3«."
+
+msgid "Could not create \"urisourcebin\" element."
+msgstr "Kunne ikke oprette elementet »urisourcebin«."
 
 #, c-format
 msgid "Both autovideosink and %s elements are missing."
@@ -245,6 +249,9 @@ msgstr "TMPlayer-undertekstformat"
 
 msgid "Kate subtitle format"
 msgstr "Kate-undertekstformat"
+
+msgid "WebVTT subtitle format"
+msgstr "WebVTT-undertekstformat"
 
 msgid "Uncompressed video"
 msgstr "Ukomprimeret video"
@@ -417,6 +424,14 @@ msgstr "brændvidde for optager"
 
 msgid "Focal length of the lens used capturing the image, in mm"
 msgstr "Brændvidde på linse brugt under optagelse af billedet, i mm"
+
+msgid "capturing 35 mm equivalent focal length"
+msgstr "35 mm-ækvivalent brændvidde for optager"
+
+msgid ""
+"35 mm equivalent focal length of the lens used capturing the image, in mm"
+msgstr ""
+"35 mm-ækvivalent brændvidde på linse brugt under optagelse af billedet, i mm"
 
 msgid "capturing digital zoom ratio"
 msgstr "digitalt zoomforhold for optager"
@@ -693,3 +708,6 @@ msgstr "Du skal angive mindst et filnavn eller en adresse for at afspille."
 
 msgid "Press 'k' to see a list of keyboard shortcuts.\n"
 msgstr "Tryk »k« for at se en liste over genvejstaster.\n"
+
+#~ msgid "Internal data stream error."
+#~ msgstr "Intern datastrømsfejl."

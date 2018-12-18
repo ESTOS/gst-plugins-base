@@ -22,43 +22,26 @@
 
 /**
  * SECTION:element-playbin
+ * @title: playbin
  *
  * Playbin provides a stand-alone everything-in-one abstraction for an
  * audio and/or video player.
  *
  * Playbin can handle both audio and video files and features
- * <itemizedlist>
- * <listitem>
- * automatic file type recognition and based on that automatic
- * selection and usage of the right audio/video/subtitle demuxers/decoders
- * </listitem>
- * <listitem>
- * visualisations for audio files
- * </listitem>
- * <listitem>
- * subtitle support for video files. Subtitles can be store in external
- * files.
- * </listitem>
- * <listitem>
- * stream selection between different video/audio/subtitles streams
- * </listitem>
- * <listitem>
- * meta info (tag) extraction
- * </listitem>
- * <listitem>
- * easy access to the last video sample
- * </listitem>
- * <listitem>
- * buffering when playing streams over a network
- * </listitem>
- * <listitem>
- * volume control with mute option
- * </listitem>
- * </itemizedlist>
  *
- * <refsect2>
- * <title>Usage</title>
- * <para>
+ * * automatic file type recognition and based on that automatic
+ * selection and usage of the right audio/video/subtitle demuxers/decoders
+ * * visualisations for audio files
+ * * subtitle support for video files. Subtitles can be store in external
+ * files.
+ * * stream selection between different video/audio/subtitles streams
+ * * meta info (tag) extraction
+ * * easy access to the last video sample
+ * * buffering when playing streams over a network
+ * * volume control with mute option
+ *
+ * ## Usage
+ *
  * A playbin element can be created just like any other element using
  * gst_element_factory_make(). The file/URI to play should be set via the #GstPlayBin:uri
  * property. This must be an absolute URI, relative file paths are not allowed.
@@ -94,11 +77,9 @@
  * via gst_element_query_position() and gst_element_query_duration() and
  * setting the format passed to GST_FORMAT_TIME. If the query was successful,
  * the duration or position will have been returned in units of nanoseconds.
- * </para>
- * </refsect2>
- * <refsect2>
- * <title>Advanced Usage: specifying the audio and video sink</title>
- * <para>
+ *
+ * ## Advanced Usage: specifying the audio and video sink
+ *
  * By default, if no audio sink or video sink has been specified via the
  * #GstPlayBin:audio-sink or #GstPlayBin:video-sink property, playbin will use the autoaudiosink
  * and autovideosink elements to find the first-best available output method.
@@ -128,21 +109,17 @@
  * It is also possible to 'suppress' audio and/or video output by using
  * 'fakesink' elements (or capture it from there using the fakesink element's
  * "handoff" signal, which, nota bene, is fired from the streaming thread!).
- * </para>
- * </refsect2>
- * <refsect2>
- * <title>Retrieving Tags and Other Meta Data</title>
- * <para>
+ *
+ * ## Retrieving Tags and Other Meta Data
+ *
  * Most of the common meta data (artist, title, etc.) can be retrieved by
  * watching for TAG messages on the pipeline's bus (see above).
  *
  * Other more specific meta information like width/height/framerate of video
  * streams or samplerate/number of channels of audio streams can be obtained
  * from the negotiated caps on the sink pads of the sinks.
- * </para>
- * </refsect2>
- * <refsect2>
- * <title>Buffering</title>
+ *
+ * ## Buffering
  * Playbin handles buffering automatically for the most part, but applications
  * need to handle parts of the buffering process as well. Whenever playbin is
  * buffering, it will post BUFFERING messages on the bus with a percentage
@@ -161,20 +138,19 @@
  *   ...
  * }
  * ]|
+ *
  * Note that applications should keep/set the pipeline in the PAUSED state when
  * a BUFFERING message is received with a buffer percent value < 100 and set
  * the pipeline back to PLAYING state when a BUFFERING message with a value
  * of 100 percent is received (if PLAYING is the desired state, that is).
- * </refsect2>
- * <refsect2>
- * <title>Embedding the video window in your application</title>
+ *
+ * ## Embedding the video window in your application
  * By default, playbin (or rather the video sinks used) will create their own
  * window. Applications will usually want to force output to a window of their
  * own, however. This can be done using the #GstVideoOverlay interface, which most
  * video sinks implement. See the documentation there for more details.
- * </refsect2>
- * <refsect2>
- * <title>Specifying which CD/DVD device to use</title>
+ *
+ * ## Specifying which CD/DVD device to use
  * The device to use for CDs/DVDs needs to be set on the source element
  * playbin creates before it is opened. The most generic way of doing this
  * is to connect to playbin's "source-setup" (or "notify::source") signal,
@@ -185,35 +161,35 @@
  * elements involved if this will work or not. For example, for DVD menu
  * playback, the following syntax might work (if the resindvd plugin is used):
  * dvd://[/path/to/device]
- * </refsect2>
- * <refsect2>
- * <title>Handling redirects</title>
- * <para>
+ *
+ * ## Handling redirects
+ *
  * Some elements may post 'redirect' messages on the bus to tell the
  * application to open another location. These are element messages containing
  * a structure named 'redirect' along with a 'new-location' field of string
  * type. The new location may be a relative or an absolute URI. Examples
  * for such redirects can be found in many quicktime movie trailers.
- * </para>
- * </refsect2>
- * <refsect2>
- * <title>Examples</title>
+ *
+ * ## Examples
  * |[
  * gst-launch-1.0 -v playbin uri=file:///path/to/somefile.mp4
- * ]| This will play back the given AVI video file, given that the video and
+ * ]|
+ *  This will play back the given AVI video file, given that the video and
  * audio decoders required to decode the content are installed. Since no
  * special audio sink or video sink is supplied (via playbin's audio-sink or
  * video-sink properties) playbin will try to find a suitable audio and
  * video sink automatically using the autoaudiosink and autovideosink elements.
  * |[
  * gst-launch-1.0 -v playbin uri=cdda://4
- * ]| This will play back track 4 on an audio CD in your disc drive (assuming
+ * ]|
+ *  This will play back track 4 on an audio CD in your disc drive (assuming
  * the drive is detected automatically by the plugin).
  * |[
  * gst-launch-1.0 -v playbin uri=dvd://
- * ]| This will play back the DVD in your disc drive (assuming
+ * ]|
+ *  This will play back the DVD in your disc drive (assuming
  * the drive is detected automatically by the plugin).
- * </refsect2>
+ *
  */
 
 /* FIXME 0.11: suppress warnings for deprecated API such as GValueArray
@@ -603,6 +579,7 @@ enum
   SIGNAL_GET_AUDIO_PAD,
   SIGNAL_GET_TEXT_PAD,
   SIGNAL_SOURCE_SETUP,
+  SIGNAL_ELEMENT_SETUP,
   LAST_SIGNAL
 };
 
@@ -622,6 +599,8 @@ static GstStateChangeReturn gst_play_bin_change_state (GstElement * element,
     GstStateChange transition);
 
 static void gst_play_bin_handle_message (GstBin * bin, GstMessage * message);
+static void gst_play_bin_deep_element_added (GstBin * playbin, GstBin * sub_bin,
+    GstElement * child);
 static gboolean gst_play_bin_query (GstElement * element, GstQuery * query);
 static void gst_play_bin_set_context (GstElement * element,
     GstContext * context);
@@ -1178,6 +1157,27 @@ gst_play_bin_class_init (GstPlayBinClass * klass)
       g_cclosure_marshal_generic, G_TYPE_NONE, 1, GST_TYPE_ELEMENT);
 
   /**
+   * GstPlayBin::element-setup:
+   * @playbin: a #GstPlayBin
+   * @element: an element that was added to the playbin hierarchy
+   *
+   * This signal is emitted when a new element is added to playbin or any of
+   * its sub-bins. This signal can be used to configure elements, e.g. to set
+   * properties on decoders. This is functionally equivalent to connecting to
+   * the deep-element-added signal, but more convenient.
+   *
+   * This signal is usually emitted from the context of a GStreamer streaming
+   * thread, so might be called at the same time as code running in the main
+   * application thread.
+   *
+   * Since: 1.10
+   */
+  gst_play_bin_signals[SIGNAL_ELEMENT_SETUP] =
+      g_signal_new ("element-setup", G_TYPE_FROM_CLASS (klass),
+      G_SIGNAL_RUN_LAST, 0, NULL, NULL,
+      g_cclosure_marshal_generic, G_TYPE_NONE, 1, GST_TYPE_ELEMENT);
+
+  /**
    * GstPlayBin::get-video-tags
    * @playbin: a #GstPlayBin
    * @stream: a video stream number
@@ -1233,7 +1233,7 @@ gst_play_bin_class_init (GstPlayBinClass * klass)
    * Action signal to retrieve the currently playing video frame in the format
    * specified by @caps.
    * If @caps is %NULL, no conversion will be performed and this function is
-   * equivalent to the #GstPlayBin::frame property.
+   * equivalent to the #GstPlayBin::sample property.
    *
    * Returns: a #GstSample of the current video frame converted to #caps.
    * The caps on the sample will describe the final layout of the buffer data.
@@ -1321,6 +1321,8 @@ gst_play_bin_class_init (GstPlayBinClass * klass)
 
   gstbin_klass->handle_message =
       GST_DEBUG_FUNCPTR (gst_play_bin_handle_message);
+  gstbin_klass->deep_element_added =
+      GST_DEBUG_FUNCPTR (gst_play_bin_deep_element_added);
 }
 
 static void
@@ -3011,6 +3013,18 @@ gst_play_bin_handle_message (GstBin * bin, GstMessage * msg)
 }
 
 static void
+gst_play_bin_deep_element_added (GstBin * playbin, GstBin * sub_bin,
+    GstElement * child)
+{
+  GST_LOG_OBJECT (playbin, "element %" GST_PTR_FORMAT " was added to "
+      "%" GST_PTR_FORMAT, child, sub_bin);
+
+  g_signal_emit (playbin, gst_play_bin_signals[SIGNAL_ELEMENT_SETUP], 0, child);
+
+  GST_BIN_CLASS (parent_class)->deep_element_added (playbin, sub_bin, child);
+}
+
+static void
 combiner_active_pad_changed (GObject * combiner, GParamSpec * pspec,
     GstPlayBin * playbin)
 {
@@ -3091,7 +3105,7 @@ update_video_multiview_caps (GstPlayBin * playbin, GstCaps * caps)
 {
   GstVideoMultiviewMode mv_mode;
   GstVideoMultiviewMode cur_mv_mode;
-  GstVideoMultiviewFlags mv_flags, cur_mv_flags;
+  guint mv_flags, cur_mv_flags;
   GstStructure *s;
   const gchar *mview_mode_str;
   GstCaps *out_caps;
@@ -4556,6 +4570,7 @@ autoplug_select_cb (GstElement * decodebin, GstPad * pad,
   GstAVElement *ave = NULL;
   GSequence *ave_seq = NULL;
   GSequenceIter *seq_iter;
+  gboolean created_sink = FALSE;
 
   playbin = group->playbin;
 
@@ -4618,11 +4633,9 @@ autoplug_select_cb (GstElement * decodebin, GstPad * pad,
       ave_list = g_list_prepend (ave_list, NULL);
     }
 
-    /* if it is a decoder and we don't have a fixed sink, then find out 
+    /* if it is a decoder and we don't have a fixed sink, then find out
      * the matching audio/video sink from GstAVElements list */
     for (l = ave_list; l; l = l->next) {
-      gboolean created_sink = FALSE;
-
       ave = (GstAVElement *) l->data;
 
       if (((isaudiodec && !group->audio_sink) ||
@@ -4638,6 +4651,10 @@ autoplug_select_cb (GstElement * decodebin, GstPad * pad,
                 gst_plugin_feature_get_name (GST_PLUGIN_FEATURE (ave->sink)));
             continue;
           } else {
+            /* The sink is ours now, don't leak the floating reference in the
+             * state-changed messages */
+            gst_object_ref_sink (*sinkp);
+
             if (!activate_sink (playbin, *sinkp, NULL)) {
               gst_object_unref (*sinkp);
               *sinkp = NULL;
@@ -4646,7 +4663,6 @@ autoplug_select_cb (GstElement * decodebin, GstPad * pad,
                   gst_plugin_feature_get_name (GST_PLUGIN_FEATURE (ave->sink)));
               continue;
             }
-            gst_object_ref_sink (*sinkp);
             created_sink = TRUE;
           }
         }
@@ -4695,6 +4711,7 @@ autoplug_select_cb (GstElement * decodebin, GstPad * pad,
           }
 
           gst_object_unref (sinkpad);
+          gst_caps_unref (raw_caps);
           gst_caps_unref (caps);
         }
 
@@ -4710,6 +4727,7 @@ autoplug_select_cb (GstElement * decodebin, GstPad * pad,
           gst_element_set_state (*sinkp, GST_STATE_NULL);
           gst_object_unref (*sinkp);
           *sinkp = NULL;
+          created_sink = FALSE;
         } else {
           g_mutex_unlock (&playbin->elements_lock);
           GST_SOURCE_GROUP_UNLOCK (group);
@@ -4784,6 +4802,12 @@ autoplug_select_cb (GstElement * decodebin, GstPad * pad,
     return GST_AUTOPLUG_SELECT_SKIP;
   }
 
+  /* The sink is ours now, don't leak floating references in the state-changed
+   * messages, but only do that if we didn't just create the sink above and
+   * already ref_sink'd it there */
+  if (!created_sink)
+    gst_object_ref_sink (*sinkp);
+
   element = *sinkp;
 
   if (!activate_sink (playbin, element, NULL)) {
@@ -4805,13 +4829,11 @@ autoplug_select_cb (GstElement * decodebin, GstPad * pad,
     return GST_AUTOPLUG_SELECT_SKIP;
   }
 
-  /* remember the sink in the group now, the element is floating, we take
-   * ownership now 
+  /* remember the sink in the group now
    *
    * store the sink in the group, we will configure it later when we
    * reconfigure the sink */
   GST_DEBUG_OBJECT (playbin, "remember sink");
-  gst_object_ref_sink (element);
   GST_SOURCE_GROUP_UNLOCK (group);
 
   /* tell decodebin to expose the pad because we are going to use this

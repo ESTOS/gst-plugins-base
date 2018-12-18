@@ -5,10 +5,10 @@
 # Мирослав Николић <miroslavnikolic@rocketmail.com>, 2011—2016.
 msgid ""
 msgstr ""
-"Project-Id-Version: gst-plugins-base-1.7.90\n"
+"Project-Id-Version: gst-plugins-base-1.10.0\n"
 "Report-Msgid-Bugs-To: http://bugzilla.gnome.org/\n"
-"POT-Creation-Date: 2016-04-20 15:29+0300\n"
-"PO-Revision-Date: 2016-03-05 09:48+0200\n"
+"POT-Creation-Date: 2017-05-04 15:02+0300\n"
+"PO-Revision-Date: 2016-12-04 14:32+0200\n"
 "Last-Translator: Мирослав Николић <miroslavnikolic@rocketmail.com>\n"
 "Language-Team: Serbian <(nothing)>\n"
 "Language: sr\n"
@@ -17,6 +17,7 @@ msgstr ""
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=3; plural=(n%10==1 && n%100!=11 ? 0 : n%10>=2 && n"
 "%10<=4 && (n%100<10 || n%100>=20) ? 1 : 2);\n"
+"X-Bugs: Report translation errors to the Language-Team address.\n"
 
 msgid "Could not open device for playback in mono mode."
 msgstr "Не могу да отворим уређај ради пуштања у моно режиму."
@@ -73,9 +74,6 @@ msgstr "Не могу да премотам ЦД."
 msgid "Could not read CD."
 msgstr "Не могу да читам ЦД."
 
-msgid "Internal data stream error."
-msgstr "Унутрашња грешка тока података."
-
 #, c-format
 msgid "Missing element '%s' - check your GStreamer installation."
 msgstr "Недостаје елемент „%s“ — проверите вашу инсталацију Гстримера."
@@ -87,7 +85,13 @@ msgid "This appears to be a text file"
 msgstr "Изгледа да је ово текстуална датотека"
 
 msgid "Could not create \"uridecodebin\" element."
-msgstr "Не могу да направим „уридекодебин“ елемент."
+msgstr "Не могу да направим „uridecodebin“ елемент."
+
+msgid "Could not create \"decodebin3\" element."
+msgstr "Не могу да направим „decodebin3“ елемент."
+
+msgid "Could not create \"urisourcebin\" element."
+msgstr "Не могу да направим „urisourcebin“ елемент."
 
 #, c-format
 msgid "Both autovideosink and %s elements are missing."
@@ -221,6 +225,9 @@ msgstr "ТМПлејер запис превода"
 
 msgid "Kate subtitle format"
 msgstr "Кејт запис превода"
+
+msgid "WebVTT subtitle format"
+msgstr "ВебВТТ запис превода"
 
 msgid "Uncompressed video"
 msgstr "Несажети снимак"
@@ -387,6 +394,15 @@ msgstr "жижна даљина снимања"
 
 msgid "Focal length of the lens used capturing the image, in mm"
 msgstr "Жижна даљина објектива коришћеног за снимање слика, у мииметрима"
+
+msgid "capturing 35 mm equivalent focal length"
+msgstr "еквивалентна жижна даљина снимања 35 mm"
+
+msgid ""
+"35 mm equivalent focal length of the lens used capturing the image, in mm"
+msgstr ""
+"Еквивалентна 35 mm жижна даљина објектива коришћеног за снимање слика, у "
+"мииметрима"
 
 msgid "capturing digital zoom ratio"
 msgstr "однос дигиталног зума снимања"
@@ -652,6 +668,9 @@ msgstr ""
 
 msgid "Press 'k' to see a list of keyboard shortcuts.\n"
 msgstr "Притисните „k“ да видите списак пречица тастатуре.\n"
+
+#~ msgid "Internal data stream error."
+#~ msgstr "Унутрашња грешка тока података."
 
 #~ msgid "A %s plugin is required to play this stream, but not installed."
 #~ msgstr ""

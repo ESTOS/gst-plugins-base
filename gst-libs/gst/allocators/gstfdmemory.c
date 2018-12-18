@@ -20,6 +20,7 @@
 
 /**
  * SECTION:gstfdmemory
+ * @title: GstFdAllocator
  * @short_description: Memory wrapper for fd backed memory
  * @see_also: #GstMemory
  *
@@ -65,7 +66,8 @@ gst_fd_mem_free (GstAllocator * allocator, GstMemory * gmem)
 
     munmap ((void *) mem->data, gmem->maxsize);
   }
-  if (mem->fd >= 0 && gmem->parent == NULL)
+  if (mem->fd >= 0 && gmem->parent == NULL
+      && !(mem->flags & GST_FD_MEMORY_FLAG_DONT_CLOSE))
     close (mem->fd);
   g_mutex_clear (&mem->lock);
   g_slice_free (GstFdMemory, mem);
@@ -109,9 +111,20 @@ gst_fd_mem_map (GstMemory * gmem, gsize maxsize, GstMapFlags flags)
 
     mem->data = mmap (0, gmem->maxsize, prot, flags, mem->fd, 0);
     if (mem->data == MAP_FAILED) {
+      GstDebugLevel level;
       mem->data = NULL;
-      GST_ERROR ("%p: fd %d: mmap failed: %s", mem, mem->fd,
-          g_strerror (errno));
+
+      switch (errno) {
+        case EACCES:
+          level = GST_LEVEL_INFO;
+          break;
+        default:
+          level = GST_LEVEL_ERROR;
+          break;
+      }
+
+      GST_CAT_LEVEL_LOG (GST_CAT_DEFAULT, level, NULL,
+          "%p: fd %d: mmap failed: %s", mem, mem->fd, g_strerror (errno));
       goto out;
     }
   }
@@ -201,7 +214,7 @@ gst_fd_allocator_class_init (GstFdAllocatorClass * klass)
   allocator_class->free = gst_fd_mem_free;
 
   GST_DEBUG_CATEGORY_INIT (gst_fdmemory_debug, "fdmemory", 0,
-    "GstFdMemory and GstFdAllocator");
+      "GstFdMemory and GstFdAllocator");
 }
 
 static void
@@ -232,7 +245,12 @@ gst_fd_allocator_init (GstFdAllocator * allocator)
 GstAllocator *
 gst_fd_allocator_new (void)
 {
-  return g_object_new (GST_TYPE_FD_ALLOCATOR, NULL);
+  GstAllocator *alloc;
+
+  alloc = g_object_new (GST_TYPE_FD_ALLOCATOR, NULL);
+  gst_object_ref_sink (alloc);
+
+  return alloc;
 }
 
 /**
@@ -245,7 +263,8 @@ gst_fd_allocator_new (void)
  * Return a %GstMemory that wraps a generic file descriptor.
  *
  * Returns: (transfer full): a GstMemory based on @allocator.
- * When the buffer will be released the allocator will close the @fd.
+ * When the buffer will be released the allocator will close the @fd unless
+ * the %GST_FD_MEMORY_FLAG_DONT_CLOSE flag is specified.
  * The memory is only mmapped on gst_buffer_mmap() request.
  *
  * Since: 1.6

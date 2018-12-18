@@ -20,6 +20,7 @@
 
 /**
  * SECTION:element-vorbisparse
+ * @title: vorbisparse
  * @see_also: vorbisdec, oggdemux, theoraparse
  *
  * The vorbisparse element will parse the header packets of the Vorbis
@@ -33,18 +34,19 @@
  * vorbisparse outputs have all of the metadata that oggmux expects to receive,
  * which allows you to (for example) remux an ogg/vorbis file.
  *
- * <refsect2>
- * <title>Example pipelines</title>
+ * ## Example pipelines
  * |[
  * gst-launch-1.0 -v filesrc location=sine.ogg ! oggdemux ! vorbisparse ! fakesink
- * ]| This pipeline shows that the streamheader is set in the caps, and that each
+ * ]|
+ *  This pipeline shows that the streamheader is set in the caps, and that each
  * buffer has the timestamp, duration, offset, and offset_end set.
  * |[
  * gst-launch-1.0 filesrc location=sine.ogg ! oggdemux ! vorbisparse \
  *            ! oggmux ! filesink location=sine-remuxed.ogg
- * ]| This pipeline shows remuxing. sine-remuxed.ogg might not be exactly the same
+ * ]|
+ *  This pipeline shows remuxing. sine-remuxed.ogg might not be exactly the same
  * as sine.ogg, but they should produce exactly the same decoded data.
- * </refsect2>
+ *
  */
 
 #ifdef HAVE_CONFIG_H
@@ -93,13 +95,12 @@ gst_vorbis_parse_class_init (GstVorbisParseClass * klass)
 
   gstelement_class->change_state = vorbis_parse_change_state;
 
-  gst_element_class_add_pad_template (gstelement_class,
-      gst_static_pad_template_get (&vorbis_parse_src_factory));
-  gst_element_class_add_pad_template (gstelement_class,
-      gst_static_pad_template_get (&vorbis_parse_sink_factory));
-  gst_element_class_set_static_metadata (gstelement_class,
-      "VorbisParse", "Codec/Parser/Audio",
-      "parse raw vorbis streams",
+  gst_element_class_add_static_pad_template (gstelement_class,
+      &vorbis_parse_src_factory);
+  gst_element_class_add_static_pad_template (gstelement_class,
+      &vorbis_parse_sink_factory);
+  gst_element_class_set_static_metadata (gstelement_class, "VorbisParse",
+      "Codec/Parser/Audio", "parse raw vorbis streams",
       "Thomas Vander Stichele <thomas at apestaart dot org>");
 
   klass->parse_packet = GST_DEBUG_FUNCPTR (vorbis_parse_parse_packet);
@@ -177,7 +178,21 @@ vorbis_parse_drain_event_queue (GstVorbisParse * parse)
   }
 }
 
-static void
+static gboolean
+vorbis_parse_have_header_packet (GstVorbisParse * parse, guint8 hdr_id)
+{
+  guint8 hdr;
+  GList *l;
+
+  for (l = parse->streamheader; l != NULL; l = l->next) {
+    if (gst_buffer_extract (l->data, 0, &hdr, 1) == 1 && hdr == hdr_id)
+      return TRUE;
+  }
+
+  return FALSE;
+}
+
+static gboolean
 vorbis_parse_push_headers (GstVorbisParse * parse)
 {
   /* mark and put on caps */
@@ -185,6 +200,20 @@ vorbis_parse_push_headers (GstVorbisParse * parse)
   GstBuffer *outbuf, *outbuf1, *outbuf2, *outbuf3;
   ogg_packet packet;
   GstMapInfo map;
+  const gchar *hdr_name;
+
+  /* Check we have enough header packets, and the right ones */
+  hdr_name = "identification";
+  if (!vorbis_parse_have_header_packet (parse, 1))
+    goto missing_header;
+
+  hdr_name = "comment";
+  if (!vorbis_parse_have_header_packet (parse, 3))
+    goto missing_header;
+
+  hdr_name = "setup";
+  if (!vorbis_parse_have_header_packet (parse, 5))
+    goto missing_header;
 
   outbuf = GST_BUFFER_CAST (parse->streamheader->data);
   gst_buffer_map (outbuf, &map, GST_MAP_READ);
@@ -243,6 +272,15 @@ vorbis_parse_push_headers (GstVorbisParse * parse)
 
   g_list_free (parse->streamheader);
   parse->streamheader = NULL;
+  return TRUE;
+
+/* ERRORS */
+missing_header:
+  {
+    GST_ELEMENT_ERROR (parse, STREAM, DECODE, (NULL),
+        ("Vorbis stream is missing %s header", hdr_name));
+    return FALSE;
+  }
 }
 
 static void
@@ -412,11 +450,16 @@ vorbis_parse_parse_packet (GstVorbisParse * parse, GstBuffer * buf)
   } else {
     /* data packet, push the headers we collected before */
     if (!parse->streamheader_sent) {
-      vorbis_parse_push_headers (parse);
+      if (!vorbis_parse_push_headers (parse)) {
+        ret = GST_FLOW_ERROR;
+        goto out;
+      }
       parse->streamheader_sent = TRUE;
     }
     ret = vorbis_parse_queue_buffer (parse, buf);
   }
+
+out:
 
   return ret;
 }

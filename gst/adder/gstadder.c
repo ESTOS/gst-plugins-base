@@ -22,6 +22,7 @@
  */
 /**
  * SECTION:element-adder
+ * @title: adder
  *
  * The adder allows to mix several streams into one by adding the data.
  * Mixed data is clamped to the min/max values of the data format.
@@ -33,12 +34,18 @@
  * audio mixing element: It will sync input streams correctly and also handle
  * live inputs properly.
  *
- * <refsect2>
- * <title>Example launch line</title>
+ * Caps negotiation is inherently racy with the adder element. You can set
+ * the "caps" property to force adder to operate in a specific audio
+ * format, sample rate and channel count. In this case you may also need
+ * audioconvert and/or audioresample elements for each input stream before the
+ * adder element to make sure the input branch can produce the forced format.
+ *
+ * ## Example launch line
  * |[
  * gst-launch-1.0 audiotestsrc freq=100 ! adder name=mix ! audioconvert ! autoaudiosink audiotestsrc freq=500 ! mix.
- * ]| This pipeline produces two sine waves mixed together.
- * </refsect2>
+ * ]|
+ *  This pipeline produces two sine waves mixed together.
+ *
  */
 /* Element-Checklist-Version: 5 */
 
@@ -630,8 +637,8 @@ gst_adder_src_event (GstPad * pad, GstObject * parent, GstEvent * event)
 
   adder = GST_ADDER (parent);
 
-  GST_DEBUG_OBJECT (pad, "Got %s event on src pad",
-      GST_EVENT_TYPE_NAME (event));
+  GST_DEBUG_OBJECT (pad, "Got %s event on src pad: %" GST_PTR_FORMAT,
+      GST_EVENT_TYPE_NAME (event), event);
 
   switch (GST_EVENT_TYPE (event)) {
     case GST_EVENT_SEEK:
@@ -699,6 +706,7 @@ gst_adder_src_event (GstPad * pad, GstObject * parent, GstEvent * event)
        * segment. After we have the lock, no collect function is running and no
        * new collect function will be called for as long as we're flushing. */
       GST_COLLECT_PADS_STREAM_LOCK (adder->collect);
+
       /* clip position and update our segment */
       if (adder->segment.stop != -1) {
         adder->segment.position = adder->segment.stop;
@@ -856,13 +864,12 @@ gst_adder_class_init (GstAdderClass * klass)
           "object.", GST_TYPE_CAPS,
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
-  gst_element_class_add_pad_template (gstelement_class,
-      gst_static_pad_template_get (&gst_adder_src_template));
-  gst_element_class_add_pad_template (gstelement_class,
-      gst_static_pad_template_get (&gst_adder_sink_template));
+  gst_element_class_add_static_pad_template (gstelement_class,
+      &gst_adder_src_template);
+  gst_element_class_add_static_pad_template (gstelement_class,
+      &gst_adder_sink_template);
   gst_element_class_set_static_metadata (gstelement_class, "Adder",
-      "Generic/Audio",
-      "Add N audio channels together",
+      "Generic/Audio", "Add N audio channels together",
       "Thomas Vander Stichele <thomas at apestaart dot org>");
 
   gstelement_class->request_new_pad =
@@ -1061,25 +1068,28 @@ gst_adder_do_clip (GstCollectPads * pads, GstCollectData * data,
   return GST_FLOW_OK;
 }
 
+/*
+ * gst_adder_collected:
+ *
+ * Combine audio streams by adding data values.
+ * basic algorithm :
+ * - this function is called when all pads have a buffer
+ * - get available bytes on all pads.
+ * - repeat for each input pad :
+ *   - read available bytes, copy or add to target buffer
+ *   - if there's an EOS event, remove the input channel
+ * - push out the output buffer
+ *
+ * Note: this code will run in one of the upstream threads.
+ *
+ * TODO: it would be nice to have a mixing mode, instead of only adding
+ * - for float we could downscale after collect loop
+ * - for int we need to downscale each input to avoid clipping or
+ *   mix into a temp (float) buffer and scale afterwards as well
+ */
 static GstFlowReturn
 gst_adder_collected (GstCollectPads * pads, gpointer user_data)
 {
-  /*
-   * combine streams by adding data values
-   * basic algorithm :
-   * - this function is called when all pads have a buffer
-   * - get available bytes on all pads.
-   * - repeat for each input pad :
-   *   - read available bytes, copy or add to target buffer
-   *   - if there's an EOS event, remove the input channel
-   * - push out the output buffer
-   *
-   * todo:
-   * - would be nice to have a mixing mode, where instead of adding we mix
-   *   - for float we could downscale after collect loop
-   *   - for int we need to downscale each input to avoid clipping or
-   *     mix into a temp (float) buffer and scale afterwards as well
-   */
   GstAdder *adder;
   GSList *collected, *next = NULL;
   GstFlowReturn ret;
@@ -1091,6 +1101,7 @@ gst_adder_collected (GstCollectPads * pads, gpointer user_data)
   gint rate, bps, bpf;
   gboolean had_mute = FALSE;
   gboolean is_eos = TRUE;
+  gboolean is_discont = FALSE;
 
   adder = GST_ADDER (user_data);
 
@@ -1112,7 +1123,7 @@ gst_adder_collected (GstCollectPads * pads, gpointer user_data)
     GstEvent *event;
 
     GST_INFO_OBJECT (adder->srcpad, "send pending stream start event");
-    /* FIXME: create id based on input ids, we can't use 
+    /* FIXME: create id based on input ids, we can't use
      * gst_pad_create_stream_id() though as that only handles 0..1 sink-pad
      */
     g_snprintf (s_id, sizeof (s_id), "adder-%08x", g_random_int ());
@@ -1145,7 +1156,7 @@ gst_adder_collected (GstCollectPads * pads, gpointer user_data)
           FALSE)) {
     GstEvent *event;
 
-    /* 
+    /*
      * When seeking we set the start and stop positions as given in the seek
      * event. We also adjust offset & timestamp accordingly.
      * This basically ignores all newsegments sent by upstream.
@@ -1167,9 +1178,10 @@ gst_adder_collected (GstCollectPads * pads, gpointer user_data)
       }
     } else {
       GST_WARNING_OBJECT (adder->srcpad, "Creating new segment event for "
-          "start:%" G_GINT64_FORMAT "  end:%" G_GINT64_FORMAT " failed",
+          "start:%" G_GINT64_FORMAT ", end:%" G_GINT64_FORMAT " failed",
           adder->segment.start, adder->segment.stop);
     }
+    is_discont = TRUE;
   }
 
   /* get available bytes for reading, this can be 0 which could mean empty
@@ -1446,7 +1458,6 @@ gst_adder_collected (GstCollectPads * pads, gpointer user_data)
   }
   next_timestamp = gst_util_uint64_scale (next_offset, GST_SECOND, rate);
 
-
   /* set timestamps on the output buffer */
   GST_BUFFER_DTS (outbuf) = GST_CLOCK_TIME_NONE;
   if (adder->segment.rate > 0.0) {
@@ -1459,6 +1470,11 @@ gst_adder_collected (GstCollectPads * pads, gpointer user_data)
     GST_BUFFER_OFFSET (outbuf) = next_offset;
     GST_BUFFER_OFFSET_END (outbuf) = adder->offset;
     GST_BUFFER_DURATION (outbuf) = adder->segment.position - next_timestamp;
+  }
+  if (is_discont) {
+    GST_BUFFER_FLAG_SET (outbuf, GST_BUFFER_FLAG_DISCONT);
+  } else {
+    GST_BUFFER_FLAG_UNSET (outbuf, GST_BUFFER_FLAG_DISCONT);
   }
 
   adder->offset = next_offset;

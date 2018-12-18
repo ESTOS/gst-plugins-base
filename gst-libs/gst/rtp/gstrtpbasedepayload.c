@@ -20,6 +20,7 @@
 
 /**
  * SECTION:gstrtpbasedepayload
+ * @title: GstRTPBaseDepayload
  * @short_description: Base class for RTP depayloader
  *
  * Provides a base class for RTP depayloaders
@@ -46,6 +47,7 @@ struct _GstRTPBaseDepayloadPrivate
   GstClockTime dts;
   GstClockTime duration;
 
+  guint32 last_ssrc;
   guint32 last_seqnum;
   guint32 last_rtptime;
   guint32 next_seqnum;
@@ -149,55 +151,17 @@ gst_rtp_base_depayload_class_init (GstRTPBaseDepayloadClass * klass)
    * application/x-rtp-depayload-stats containing the following fields relating to
    * the last processed buffer and current state of the stream being depayloaded:
    *
-   * <variablelist>
-   *   <varlistentry>
-   *     <term>clock-rate</term>
-   *     <listitem><para>#G_TYPE_UINT, clock-rate of the
-   *     stream</para></listitem>
-   *   </varlistentry>
-   *   <varlistentry>
-   *     <term>npt-start</term>
-   *     <listitem><para>#G_TYPE_UINT64, time of playback start
-   *     </para></listitem>
-   *   </varlistentry>
-   *   <varlistentry>
-   *     <term>npt-stop</term>
-   *     <listitem><para>#G_TYPE_UINT64, time of playback stop
-   *     </para></listitem>
-   *   </varlistentry>
-   *   <varlistentry>
-   *     <term>play-speed</term>
-   *     <listitem><para>#G_TYPE_DOUBLE, the playback speed
-   *     </para></listitem>
-   *   </varlistentry>
-   *   <varlistentry>
-   *     <term>play-scale</term>
-   *     <listitem><para>#G_TYPE_DOUBLE, the playback scale
-   *     </para></listitem>
-   *   </varlistentry>
-   *   <varlistentry>
-   *     <term>running-time-dts</term>
-   *     <listitem><para>#G_TYPE_UINT64, the last running-time of the
+   *   * `clock-rate`: #G_TYPE_UINT, clock-rate of the stream
+   *   * `npt-start`: #G_TYPE_UINT64, time of playback start
+   *   * `npt-stop`: #G_TYPE_UINT64, time of playback stop
+   *   * `play-speed`: #G_TYPE_DOUBLE, the playback speed
+   *   * `play-scale`: #G_TYPE_DOUBLE, the playback scale
+   *   * `running-time-dts`: #G_TYPE_UINT64, the last running-time of the
    *      last DTS
-   *     </para></listitem>
-   *   </varlistentry>
-   *   <varlistentry>
-   *     <term>running-time-pts</term>
-   *     <listitem><para>#G_TYPE_UINT64, the last running-time of the
+   *   * `running-time-pts`: #G_TYPE_UINT64, the last running-time of the
    *      last PTS
-   *     </para></listitem>
-   *   </varlistentry>
-   *   <varlistentry>
-   *     <term>seqnum</term>
-   *     <listitem><para>#G_TYPE_UINT, the last seen seqnum
-   *     </para></listitem>
-   *   </varlistentry>
-   *   <varlistentry>
-   *     <term>timestamp</term>
-   *     <listitem><para>#G_TYPE_UINT, the last seen RTP timestamp
-   *     </para></listitem>
-   *   </varlistentry>
-   * </variablelist>
+   *   * `seqnum`: #G_TYPE_UINT, the last seen seqnum
+   *   * `timestamp`: #G_TYPE_UINT, the last seen RTP timestamp
    **/
   g_object_class_install_property (G_OBJECT_CLASS (klass), PROP_STATS,
       g_param_spec_boxed ("stats", "Statistics", "Various statistics",
@@ -356,6 +320,7 @@ gst_rtp_base_depayload_handle_buffer (GstRTPBaseDepayload * filter,
   GstRTPBaseDepayloadPrivate *priv;
   GstFlowReturn ret = GST_FLOW_OK;
   GstBuffer *out_buf;
+  guint32 ssrc;
   guint16 seqnum;
   guint32 rtptime;
   gboolean discont, buf_discont;
@@ -380,6 +345,7 @@ gst_rtp_base_depayload_handle_buffer (GstRTPBaseDepayload * filter,
   priv->dts = GST_BUFFER_DTS (in);
   priv->duration = GST_BUFFER_DURATION (in);
 
+  ssrc = gst_rtp_buffer_get_ssrc (&rtp);
   seqnum = gst_rtp_buffer_get_seq (&rtp);
   rtptime = gst_rtp_buffer_get_timestamp (&rtp);
 
@@ -396,32 +362,40 @@ gst_rtp_base_depayload_handle_buffer (GstRTPBaseDepayload * filter,
    * are strictly increasing, dropping anything that is out of the ordinary. We
    * can only do this when the next_seqnum is known. */
   if (G_LIKELY (priv->next_seqnum != -1)) {
-    gap = gst_rtp_buffer_compare_seqnum (seqnum, priv->next_seqnum);
+    if (ssrc != priv->last_ssrc) {
+      GST_LOG_OBJECT (filter,
+          "New ssrc %u (current ssrc %u), sender restarted",
+          ssrc, priv->last_ssrc);
+      discont = TRUE;
+    } else {
+      gap = gst_rtp_buffer_compare_seqnum (seqnum, priv->next_seqnum);
 
-    /* if we have no gap, all is fine */
-    if (G_UNLIKELY (gap != 0)) {
-      GST_LOG_OBJECT (filter, "got packet %u, expected %u, gap %d", seqnum,
-          priv->next_seqnum, gap);
-      if (gap < 0) {
-        /* seqnum > next_seqnum, we are missing some packets, this is always a
-         * DISCONT. */
-        GST_LOG_OBJECT (filter, "%d missing packets", gap);
-        discont = TRUE;
-      } else {
-        /* seqnum < next_seqnum, we have seen this packet before or the sender
-         * could be restarted. If the packet is not too old, we throw it away as
-         * a duplicate, otherwise we mark discont and continue. 100 misordered
-         * packets is a good threshold. See also RFC 4737. */
-        if (gap < 100)
-          goto dropping;
+      /* if we have no gap, all is fine */
+      if (G_UNLIKELY (gap != 0)) {
+        GST_LOG_OBJECT (filter, "got packet %u, expected %u, gap %d", seqnum,
+            priv->next_seqnum, gap);
+        if (gap < 0) {
+          /* seqnum > next_seqnum, we are missing some packets, this is always a
+           * DISCONT. */
+          GST_LOG_OBJECT (filter, "%d missing packets", gap);
+          discont = TRUE;
+        } else {
+          /* seqnum < next_seqnum, we have seen this packet before or the sender
+           * could be restarted. If the packet is not too old, we throw it away as
+           * a duplicate, otherwise we mark discont and continue. 100 misordered
+           * packets is a good threshold. See also RFC 4737. */
+          if (gap < 100)
+            goto dropping;
 
-        GST_LOG_OBJECT (filter,
-            "%d > 100, packet too old, sender likely restarted", gap);
-        discont = TRUE;
+          GST_LOG_OBJECT (filter,
+              "%d > 100, packet too old, sender likely restarted", gap);
+          discont = TRUE;
+        }
       }
     }
   }
   priv->next_seqnum = (seqnum + 1) & 0xffff;
+  priv->last_ssrc = ssrc;
 
   if (G_UNLIKELY (discont)) {
     priv->discont = TRUE;
@@ -600,8 +574,16 @@ gst_rtp_base_depayload_handle_event (GstRTPBaseDepayload * filter,
     }
     case GST_EVENT_SEGMENT:
     {
+      GstSegment segment;
+
       GST_OBJECT_LOCK (filter);
-      gst_event_copy_segment (event, &filter->segment);
+      gst_event_copy_segment (event, &segment);
+
+      if (segment.format != GST_FORMAT_TIME) {
+        GST_ERROR_OBJECT (filter, "Segment with non-TIME format not supported");
+        res = FALSE;
+      }
+      filter->segment = segment;
       GST_OBJECT_UNLOCK (filter);
 
       /* don't pass the event downstream, we generate our own segment including
@@ -725,16 +707,9 @@ create_segment_event (GstRTPBaseDepayload * filter, guint rtptime,
   return event;
 }
 
-typedef struct
-{
-  GstRTPBaseDepayload *depayload;
-  GstRTPBaseDepayloadClass *bclass;
-} HeaderData;
-
 static gboolean
-set_headers (GstBuffer ** buffer, guint idx, HeaderData * data)
+set_headers (GstBuffer ** buffer, guint idx, GstRTPBaseDepayload * depayload)
 {
-  GstRTPBaseDepayload *depayload = data->depayload;
   GstRTPBaseDepayloadPrivate *priv = depayload->priv;
   GstClockTime pts, dts, duration;
 
@@ -771,17 +746,12 @@ static GstFlowReturn
 gst_rtp_base_depayload_prepare_push (GstRTPBaseDepayload * filter,
     gboolean is_list, gpointer obj)
 {
-  HeaderData data;
-
-  data.depayload = filter;
-  data.bclass = GST_RTP_BASE_DEPAYLOAD_GET_CLASS (filter);
-
   if (is_list) {
     GstBufferList **blist = obj;
-    gst_buffer_list_foreach (*blist, (GstBufferListFunc) set_headers, &data);
+    gst_buffer_list_foreach (*blist, (GstBufferListFunc) set_headers, filter);
   } else {
     GstBuffer **buf = obj;
-    set_headers (buf, 0, &data);
+    set_headers (buf, 0, filter);
   }
 
   /* if this is the first buffer send a NEWSEGMENT */

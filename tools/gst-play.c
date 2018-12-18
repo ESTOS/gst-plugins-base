@@ -72,6 +72,14 @@ typedef struct
 
   GstElement *playbin;
 
+  /* playbin3 variables */
+  gboolean is_playbin3;
+  GstStreamCollection *collection;
+  gchar *cur_audio_sid;
+  gchar *cur_video_sid;
+  gchar *cur_text_sid;
+  GMutex selection_lock;
+
   GMainLoop *loop;
   guint bus_watch;
   guint timeout;
@@ -139,12 +147,18 @@ gst_play_printf (const gchar * format, ...)
 static GstPlay *
 play_new (gchar ** uris, const gchar * audio_sink, const gchar * video_sink,
     gboolean gapless, gdouble initial_volume, gboolean verbose,
-    const gchar * flags_string)
+    const gchar * flags_string, gboolean use_playbin3)
 {
   GstElement *sink, *playbin;
   GstPlay *play;
 
-  playbin = gst_element_factory_make ("playbin", "playbin");
+
+  if (use_playbin3) {
+    playbin = gst_element_factory_make ("playbin3", "playbin");
+  } else {
+    playbin = gst_element_factory_make ("playbin", "playbin");
+  }
+
   if (playbin == NULL)
     return NULL;
 
@@ -155,6 +169,16 @@ play_new (gchar ** uris, const gchar * audio_sink, const gchar * video_sink,
   play->cur_idx = -1;
 
   play->playbin = playbin;
+
+  if (use_playbin3) {
+    play->is_playbin3 = TRUE;
+  } else {
+    const gchar *env = g_getenv ("USE_PLAYBIN3");
+    if (env && g_str_has_prefix (env, "1"))
+      play->is_playbin3 = TRUE;
+  }
+
+  g_mutex_init (&play->selection_lock);
 
   if (audio_sink != NULL) {
     if (strchr (audio_sink, ' ') != NULL)
@@ -194,8 +218,8 @@ play_new (gchar ** uris, const gchar * audio_sink, const gchar * video_sink,
   }
 
   if (verbose) {
-    play->deep_notify_id = g_signal_connect (play->playbin, "deep-notify",
-        G_CALLBACK (gst_object_default_deep_notify), NULL);
+    play->deep_notify_id =
+        gst_element_add_property_deep_notify_watch (play->playbin, NULL, TRUE);
   }
 
   play->loop = g_main_loop_new (NULL, FALSE);
@@ -244,6 +268,15 @@ play_free (GstPlay * play)
   g_main_loop_unref (play->loop);
 
   g_strfreev (play->uris);
+
+  if (play->collection)
+    gst_object_unref (play->collection);
+  g_free (play->cur_audio_sid);
+  g_free (play->cur_video_sid);
+  g_free (play->cur_text_sid);
+
+  g_mutex_clear (&play->selection_lock);
+
   g_free (play);
 }
 
@@ -467,6 +500,91 @@ play_bus_msg (GstBus * bus, GstMessage * msg, gpointer user_data)
         }
         if (ev)
           gst_event_unref (ev);
+      }
+      break;
+    }
+    case GST_MESSAGE_PROPERTY_NOTIFY:{
+      const GValue *val;
+      const gchar *name;
+      GstObject *obj;
+      gchar *val_str = NULL;
+      gchar *obj_name;
+
+      gst_message_parse_property_notify (msg, &obj, &name, &val);
+
+      obj_name = gst_object_get_path_string (GST_OBJECT (obj));
+      if (val != NULL) {
+        if (G_VALUE_HOLDS_STRING (val))
+          val_str = g_value_dup_string (val);
+        else if (G_VALUE_TYPE (val) == GST_TYPE_CAPS)
+          val_str = gst_caps_to_string (g_value_get_boxed (val));
+        else if (G_VALUE_TYPE (val) == GST_TYPE_TAG_LIST)
+          val_str = gst_tag_list_to_string (g_value_get_boxed (val));
+        else
+          val_str = gst_value_serialize (val);
+      } else {
+        val_str = g_strdup ("(no value)");
+      }
+
+      gst_play_printf ("%s: %s = %s\n", obj_name, name, val_str);
+      g_free (obj_name);
+      g_free (val_str);
+      break;
+    }
+    case GST_MESSAGE_STREAM_COLLECTION:
+    {
+      GstStreamCollection *collection = NULL;
+      gst_message_parse_stream_collection (msg, &collection);
+
+      if (collection) {
+        g_mutex_lock (&play->selection_lock);
+        gst_object_replace ((GstObject **) & play->collection,
+            (GstObject *) collection);
+        g_mutex_unlock (&play->selection_lock);
+      }
+      break;
+    }
+    case GST_MESSAGE_STREAMS_SELECTED:
+    {
+      GstStreamCollection *collection = NULL;
+      guint i, len;
+
+      gst_message_parse_streams_selected (msg, &collection);
+      if (collection) {
+        g_mutex_lock (&play->selection_lock);
+        gst_object_replace ((GstObject **) & play->collection,
+            (GstObject *) collection);
+
+        /* Free all last stream-ids */
+        g_free (play->cur_audio_sid);
+        g_free (play->cur_video_sid);
+        g_free (play->cur_text_sid);
+        play->cur_audio_sid = NULL;
+        play->cur_video_sid = NULL;
+        play->cur_text_sid = NULL;
+
+        len = gst_message_streams_selected_get_size (msg);
+        for (i = 0; i < len; i++) {
+          GstStream *stream = gst_message_streams_selected_get_stream (msg, i);
+          if (stream) {
+            GstStreamType type = gst_stream_get_stream_type (stream);
+            const gchar *stream_id = gst_stream_get_stream_id (stream);
+
+            if (type & GST_STREAM_TYPE_AUDIO) {
+              play->cur_audio_sid = g_strdup (stream_id);
+            } else if (type & GST_STREAM_TYPE_VIDEO) {
+              play->cur_video_sid = g_strdup (stream_id);
+            } else if (type & GST_STREAM_TYPE_TEXT) {
+              play->cur_text_sid = g_strdup (stream_id);
+            } else {
+              g_print ("Unknown stream type with stream-id %s", stream_id);
+            }
+            gst_object_unref (stream);
+          }
+        }
+
+        gst_object_unref (collection);
+        g_mutex_unlock (&play->selection_lock);
       }
       break;
     }
@@ -915,11 +1033,92 @@ play_switch_trick_mode (GstPlay * play)
   }
 }
 
+static GstStream *
+play_get_nth_stream_in_collection (GstPlay * play, guint index,
+    GstPlayTrackType track_type)
+{
+  guint len, i, n_streams = 0;
+  GstStreamType target_type;
+
+  switch (track_type) {
+    case GST_PLAY_TRACK_TYPE_AUDIO:
+      target_type = GST_STREAM_TYPE_AUDIO;
+      break;
+    case GST_PLAY_TRACK_TYPE_VIDEO:
+      target_type = GST_STREAM_TYPE_VIDEO;
+      break;
+    case GST_PLAY_TRACK_TYPE_SUBTITLE:
+      target_type = GST_STREAM_TYPE_TEXT;
+      break;
+    default:
+      return NULL;
+  }
+
+  len = gst_stream_collection_get_size (play->collection);
+
+  for (i = 0; i < len; i++) {
+    GstStream *stream = gst_stream_collection_get_stream (play->collection, i);
+    GstStreamType type = gst_stream_get_stream_type (stream);
+
+    if (type & target_type) {
+      if (index == n_streams)
+        return stream;
+
+      n_streams++;
+    }
+  }
+
+  return NULL;
+}
+
 static void
 play_cycle_track_selection (GstPlay * play, GstPlayTrackType track_type)
 {
   const gchar *prop_cur, *prop_n, *prop_get, *name;
   gint cur = -1, n = -1;
+  guint flag, cur_flags;
+
+  /* playbin3 variables */
+  GList *selected_streams = NULL;
+  gint cur_audio_idx = -1, cur_video_idx = -1, cur_text_idx = -1;
+  gint nb_audio = 0, nb_video = 0, nb_text = 0;
+  guint len, i;
+
+  g_mutex_lock (&play->selection_lock);
+  if (play->is_playbin3) {
+    if (!play->collection) {
+      g_print ("No stream-collection\n");
+      g_mutex_unlock (&play->selection_lock);
+      return;
+    }
+
+    /* Check the total number of streams of each type */
+    len = gst_stream_collection_get_size (play->collection);
+    for (i = 0; i < len; i++) {
+      GstStream *stream =
+          gst_stream_collection_get_stream (play->collection, i);
+      if (stream) {
+        GstStreamType type = gst_stream_get_stream_type (stream);
+        const gchar *sid = gst_stream_get_stream_id (stream);
+
+        if (type & GST_STREAM_TYPE_AUDIO) {
+          if (play->cur_audio_sid && !g_strcmp0 (play->cur_audio_sid, sid))
+            cur_audio_idx = nb_audio;
+          nb_audio++;
+        } else if (type & GST_STREAM_TYPE_VIDEO) {
+          if (play->cur_video_sid && !g_strcmp0 (play->cur_video_sid, sid))
+            cur_video_idx = nb_video;
+          nb_video++;
+        } else if (type & GST_STREAM_TYPE_TEXT) {
+          if (play->cur_text_sid && !g_strcmp0 (play->cur_text_sid, sid))
+            cur_text_idx = nb_text;
+          nb_text++;
+        } else {
+          g_print ("Unknown stream type with stream-id %s", sid);
+        }
+      }
+    }
+  }
 
   switch (track_type) {
     case GST_PLAY_TRACK_TYPE_AUDIO:
@@ -927,52 +1126,151 @@ play_cycle_track_selection (GstPlay * play, GstPlayTrackType track_type)
       prop_cur = "current-audio";
       prop_n = "n-audio";
       name = "audio";
+      flag = 0x2;
+      if (play->is_playbin3) {
+        n = nb_audio;
+        cur = cur_audio_idx;
+        if (play->cur_video_sid) {
+          selected_streams =
+              g_list_append (selected_streams, play->cur_video_sid);
+        }
+        if (play->cur_text_sid) {
+          selected_streams =
+              g_list_append (selected_streams, play->cur_text_sid);
+        }
+      }
       break;
     case GST_PLAY_TRACK_TYPE_VIDEO:
       prop_get = "get-video-tags";
       prop_cur = "current-video";
       prop_n = "n-video";
       name = "video";
+      flag = 0x1;
+      if (play->is_playbin3) {
+        n = nb_video;
+        cur = cur_video_idx;
+        if (play->cur_audio_sid) {
+          selected_streams =
+              g_list_append (selected_streams, play->cur_audio_sid);
+        }
+        if (play->cur_text_sid) {
+          selected_streams =
+              g_list_append (selected_streams, play->cur_text_sid);
+        }
+      }
       break;
     case GST_PLAY_TRACK_TYPE_SUBTITLE:
       prop_get = "get-text-tags";
       prop_cur = "current-text";
       prop_n = "n-text";
       name = "subtitle";
+      flag = 0x4;
+      if (play->is_playbin3) {
+        n = nb_text;
+        cur = cur_text_idx;
+        if (play->cur_audio_sid) {
+          selected_streams =
+              g_list_append (selected_streams, play->cur_audio_sid);
+        }
+        if (play->cur_video_sid) {
+          selected_streams =
+              g_list_append (selected_streams, play->cur_video_sid);
+        }
+      }
       break;
     default:
       return;
   }
 
-  g_object_get (play->playbin, prop_cur, &cur, prop_n, &n, NULL);
+  if (play->is_playbin3) {
+    if (n > 0) {
+      if (cur < 0)
+        cur = 0;
+      else
+        cur = (cur + 1) % (n + 1);
+    }
+  } else {
+    g_object_get (play->playbin, prop_cur, &cur, prop_n, &n, "flags",
+        &cur_flags, NULL);
+
+    if (!(cur_flags & flag))
+      cur = 0;
+    else
+      cur = (cur + 1) % (n + 1);
+  }
 
   if (n < 1) {
     g_print ("No %s tracks.\n", name);
-  } else if (n == 1) {
-    g_print ("No other %s tracks to switch to.\n", name);
+    g_mutex_unlock (&play->selection_lock);
   } else {
     gchar *lcode = NULL, *lname = NULL;
     const gchar *lang = NULL;
     GstTagList *tags = NULL;
 
-    cur = (cur + 1) % n;
-    g_signal_emit_by_name (play->playbin, prop_get, cur, &tags);
-    if (tags != NULL) {
-      if (gst_tag_list_get_string (tags, GST_TAG_LANGUAGE_CODE, &lcode))
-        lang = gst_tag_get_language_name (lcode);
-      else if (gst_tag_list_get_string (tags, GST_TAG_LANGUAGE_NAME, &lname))
-        lang = lname;
-      gst_tag_list_unref (tags);
+    if (cur >= n && track_type != GST_PLAY_TRACK_TYPE_VIDEO) {
+      cur = -1;
+      g_print ("Disabling %s.           \n", name);
+      if (play->is_playbin3) {
+        /* Just make it empty for the track type */
+      } else if (cur_flags & flag) {
+        cur_flags &= ~flag;
+        g_object_set (play->playbin, "flags", cur_flags, NULL);
+      }
+    } else {
+      /* For video we only want to switch between streams, not disable it altogether */
+      if (cur >= n)
+        cur = 0;
+
+      if (play->is_playbin3) {
+        GstStream *stream;
+
+        stream = play_get_nth_stream_in_collection (play, cur, track_type);
+        if (stream) {
+          selected_streams = g_list_append (selected_streams,
+              (gchar *) gst_stream_get_stream_id (stream));
+          tags = gst_stream_get_tags (stream);
+        } else {
+          g_print ("Collection has no stream for track %d of %d.\n",
+              cur + 1, n);
+        }
+      } else {
+        if (!(cur_flags & flag) && track_type != GST_PLAY_TRACK_TYPE_VIDEO) {
+          cur_flags |= flag;
+          g_object_set (play->playbin, "flags", cur_flags, NULL);
+        }
+        g_signal_emit_by_name (play->playbin, prop_get, cur, &tags);
+      }
+
+      if (tags != NULL) {
+        if (gst_tag_list_get_string (tags, GST_TAG_LANGUAGE_CODE, &lcode))
+          lang = gst_tag_get_language_name (lcode);
+        else if (gst_tag_list_get_string (tags, GST_TAG_LANGUAGE_NAME, &lname))
+          lang = lname;
+        gst_tag_list_unref (tags);
+      }
+      if (lang != NULL)
+        g_print ("Switching to %s track %d of %d (%s).\n", name, cur + 1, n,
+            lang);
+      else
+        g_print ("Switching to %s track %d of %d.\n", name, cur + 1, n);
     }
-    if (lang != NULL)
-      g_print ("Switching to %s track %d of %d (%s).\n", name, cur + 1, n,
-          lang);
-    else
-      g_print ("Switching to %s track %d of %d.\n", name, cur + 1, n);
-    g_object_set (play->playbin, prop_cur, cur, NULL);
     g_free (lcode);
     g_free (lname);
+    g_mutex_unlock (&play->selection_lock);
+
+    if (play->is_playbin3) {
+      if (selected_streams)
+        gst_element_send_event (play->playbin,
+            gst_event_new_select_streams (selected_streams));
+      else
+        g_print ("Can't disable all streams !\n");
+    } else {
+      g_object_set (play->playbin, prop_cur, cur, NULL);
+    }
   }
+
+  if (selected_streams)
+    g_list_free (selected_streams);
 }
 
 static void
@@ -1133,6 +1431,7 @@ main (int argc, char **argv)
   GError *err = NULL;
   GOptionContext *ctx;
   gchar *playlist_file = NULL;
+  gboolean use_playbin3 = FALSE;
   GOptionEntry options[] = {
     {"verbose", 'v', 0, G_OPTION_ARG_NONE, &verbose,
         N_("Output status information and property notifications"), NULL},
@@ -1158,6 +1457,10 @@ main (int argc, char **argv)
         N_("Playlist file containing input media files"), NULL},
     {"quiet", 'q', 0, G_OPTION_ARG_NONE, &quiet,
         N_("Do not print any output (apart from errors)"), NULL},
+    {"use-playbin3", 0, 0, G_OPTION_ARG_NONE, &use_playbin3,
+          N_("Use playbin3 pipeline")
+          N_("(default varies depending on 'USE_PLAYBIN' env variable)"),
+        NULL},
     {G_OPTION_REMAINING, 0, 0, G_OPTION_ARG_FILENAME_ARRAY, &filenames, NULL},
     {NULL}
   };
@@ -1171,6 +1474,8 @@ main (int argc, char **argv)
 #endif
 
   g_set_prgname ("gst-play-" GST_API_VERSION);
+  /* Ensure XInitThreads() is called if/when needed */
+  g_setenv ("GST_GL_XINITTHREADS", "1", TRUE);
 
   ctx = g_option_context_new ("FILE1|URI1 [FILE2|URI2] [FILE3|URI3] ...");
   g_option_context_add_main_entries (ctx, options, GETTEXT_PACKAGE);
@@ -1261,8 +1566,8 @@ main (int argc, char **argv)
     shuffle_uris (uris, num);
 
   /* prepare */
-  play =
-      play_new (uris, audio_sink, video_sink, gapless, volume, verbose, flags);
+  play = play_new (uris, audio_sink, video_sink, gapless, volume, verbose,
+      flags, use_playbin3);
 
   if (play == NULL) {
     g_printerr
@@ -1289,5 +1594,6 @@ main (int argc, char **argv)
   g_free (video_sink);
 
   g_print ("\n");
+  gst_deinit ();
   return 0;
 }

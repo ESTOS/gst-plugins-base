@@ -620,16 +620,13 @@ gst_play_sink_class_init (GstPlaySinkClass * klass)
       G_STRUCT_OFFSET (GstPlaySinkClass, convert_sample), NULL, NULL,
       g_cclosure_marshal_generic, GST_TYPE_SAMPLE, 1, GST_TYPE_CAPS);
 
-  gst_element_class_add_pad_template (gstelement_klass,
-      gst_static_pad_template_get (&audiorawtemplate));
-  gst_element_class_add_pad_template (gstelement_klass,
-      gst_static_pad_template_get (&audiotemplate));
-  gst_element_class_add_pad_template (gstelement_klass,
-      gst_static_pad_template_get (&videorawtemplate));
-  gst_element_class_add_pad_template (gstelement_klass,
-      gst_static_pad_template_get (&videotemplate));
-  gst_element_class_add_pad_template (gstelement_klass,
-      gst_static_pad_template_get (&texttemplate));
+  gst_element_class_add_static_pad_template (gstelement_klass,
+      &audiorawtemplate);
+  gst_element_class_add_static_pad_template (gstelement_klass, &audiotemplate);
+  gst_element_class_add_static_pad_template (gstelement_klass,
+      &videorawtemplate);
+  gst_element_class_add_static_pad_template (gstelement_klass, &videotemplate);
+  gst_element_class_add_static_pad_template (gstelement_klass, &texttemplate);
   gst_element_class_set_static_metadata (gstelement_klass, "Player Sink",
       "Generic/Bin/Sink",
       "Convenience sink for multiple streams",
@@ -680,6 +677,8 @@ gst_play_sink_init (GstPlaySink * playsink)
 
   g_rec_mutex_init (&playsink->lock);
   GST_OBJECT_FLAG_SET (playsink, GST_ELEMENT_FLAG_SINK);
+  gst_bin_set_suppressed_flags (GST_BIN (playsink),
+      GST_ELEMENT_FLAG_SOURCE | GST_ELEMENT_FLAG_SINK);
 
   channel =
       GST_COLOR_BALANCE_CHANNEL (g_object_new (GST_TYPE_COLOR_BALANCE_CHANNEL,
@@ -857,6 +856,10 @@ gst_play_sink_set_sink (GstPlaySink * playsink, GstPlaySinkType type,
     GstElement * sink)
 {
   GstElement **elem = NULL, *old = NULL;
+#ifndef GST_DISABLE_GST_DEBUG
+  GstPad *sink_pad;
+  const gchar *sink_type = NULL;
+#endif
 
   GST_LOG ("Setting sink %" GST_PTR_FORMAT " as sink type %d", sink, type);
 
@@ -865,13 +868,22 @@ gst_play_sink_set_sink (GstPlaySink * playsink, GstPlaySinkType type,
     case GST_PLAY_SINK_TYPE_AUDIO:
     case GST_PLAY_SINK_TYPE_AUDIO_RAW:
       elem = &playsink->audio_sink;
+#ifndef GST_DISABLE_GST_DEBUG
+      sink_type = "audio";
+#endif
       break;
     case GST_PLAY_SINK_TYPE_VIDEO:
     case GST_PLAY_SINK_TYPE_VIDEO_RAW:
       elem = &playsink->video_sink;
+#ifndef GST_DISABLE_GST_DEBUG
+      sink_type = "video";
+#endif
       break;
     case GST_PLAY_SINK_TYPE_TEXT:
       elem = &playsink->text_sink;
+#ifndef GST_DISABLE_GST_DEBUG
+      sink_type = "text";
+#endif
       break;
     default:
       break;
@@ -883,6 +895,19 @@ gst_play_sink_set_sink (GstPlaySink * playsink, GstPlaySinkType type,
     *elem = sink;
   }
   GST_PLAY_SINK_UNLOCK (playsink);
+
+#ifndef GST_DISABLE_GST_DEBUG
+  /* Check and warn if an application sets a sink with no 'sink' pad */
+  if (sink && elem) {
+    if ((sink_pad = gst_element_get_static_pad (sink, "sink")) != NULL) {
+      gst_object_unref (sink_pad);
+    } else {
+      GST_ELEMENT_WARNING (playsink, CORE, FAILED,
+          ("Application error - playback can't work"),
+          ("custom %s sink has no pad named \"sink\"", sink_type));
+    }
+  }
+#endif
 
   if (old) {
     /* Set the old sink to NULL if it is not used any longer */
@@ -1230,8 +1255,6 @@ add_chain (GstPlayChain * chain, gboolean add)
     gst_bin_add (GST_BIN_CAST (chain->playsink), chain->bin);
   else {
     gst_bin_remove (GST_BIN_CAST (chain->playsink), chain->bin);
-    /* we don't want to lose our sink status */
-    GST_OBJECT_FLAG_SET (chain->playsink, GST_ELEMENT_FLAG_SINK);
   }
 
   chain->added = add;
@@ -1843,7 +1866,7 @@ gen_video_chain (GstPlaySink * playsink, gboolean raw, gboolean async)
        * floating reference ourselves already */
       gst_object_unref (chain->filter);
       if (prev) {
-        if (!gst_element_link_pads_full (prev, "src", chain->filter, "sink",
+        if (!gst_element_link_pads_full (prev, "src", chain->filter, NULL,
                 GST_PAD_LINK_CHECK_TEMPLATE_CAPS)) {
           goto link_failed;
         }
@@ -2724,7 +2747,7 @@ gen_audio_chain (GstPlaySink * playsink, gboolean raw)
        * floating reference ourselves already */
       gst_object_unref (chain->filter);
       if (prev) {
-        if (!gst_element_link_pads_full (prev, "src", chain->filter, "sink",
+        if (!gst_element_link_pads_full (prev, "src", chain->filter, NULL,
                 GST_PAD_LINK_CHECK_TEMPLATE_CAPS)) {
           goto link_failed;
         }
@@ -3527,7 +3550,6 @@ gst_play_sink_do_reconfigure (GstPlaySink * playsink)
       goto no_chain;
 
     if (!playsink->audio_sinkpad_stream_synchronizer) {
-      GstPad *audio_queue_srcpad;
       GValue item = { 0, };
       GstIterator *it;
 
@@ -3542,8 +3564,19 @@ gst_play_sink_do_reconfigure (GstPlaySink * playsink)
       g_value_unset (&item);
       g_assert (playsink->audio_srcpad_stream_synchronizer);
       gst_iterator_free (it);
+    }
 
-      if (need_vis) {
+    if (need_vis) {
+      GstPad *audio_queue_srcpad;
+
+      if (gst_pad_is_linked (playsink->audio_sinkpad_stream_synchronizer)) {
+        GstPad *peer_pad =
+            gst_pad_get_peer (playsink->audio_sinkpad_stream_synchronizer);
+        gst_pad_unlink (peer_pad, playsink->audio_sinkpad_stream_synchronizer);
+        gst_object_unref (peer_pad);
+      }
+
+      if (!playsink->audio_ssync_queue) {
         GST_DEBUG_OBJECT (playsink, "adding audio stream synchronizer queue");
         playsink->audio_ssync_queue =
             gst_element_factory_make ("queue", "audiossyncqueue");
@@ -3559,14 +3592,15 @@ gst_play_sink_do_reconfigure (GstPlaySink * playsink)
         gst_bin_add (GST_BIN_CAST (playsink), playsink->audio_ssync_queue);
         playsink->audio_ssync_queue_sinkpad =
             gst_element_get_static_pad (playsink->audio_ssync_queue, "sink");
-        audio_queue_srcpad =
-            gst_element_get_static_pad (playsink->audio_ssync_queue, "src");
-        gst_element_sync_state_with_parent (playsink->audio_ssync_queue);
-        gst_pad_link_full (audio_queue_srcpad,
-            playsink->audio_sinkpad_stream_synchronizer,
-            GST_PAD_LINK_CHECK_NOTHING);
-        gst_object_unref (audio_queue_srcpad);
       }
+
+      audio_queue_srcpad =
+          gst_element_get_static_pad (playsink->audio_ssync_queue, "src");
+      gst_pad_link_full (audio_queue_srcpad,
+          playsink->audio_sinkpad_stream_synchronizer,
+          GST_PAD_LINK_CHECK_NOTHING);
+      gst_object_unref (audio_queue_srcpad);
+      gst_element_sync_state_with_parent (playsink->audio_ssync_queue);
     }
 
     if (playsink->audiochain) {
@@ -3644,7 +3678,26 @@ gst_play_sink_do_reconfigure (GstPlaySink * playsink)
     if (playsink->vischain) {
       GST_DEBUG_OBJECT (playsink, "setting up vis chain");
 
-      /* Just change vis plugin or set up chain? */
+      /* Lazily add and activate chain */
+      if (!playsink->vischain->chain.added) {
+        srcpad =
+            gst_element_get_static_pad (playsink->vischain->chain.bin, "src");
+        add_chain (GST_PLAY_CHAIN (playsink->vischain), TRUE);
+        activate_chain (GST_PLAY_CHAIN (playsink->vischain), TRUE);
+        if (playsink->audio_tee_vissrc == NULL) {
+          playsink->audio_tee_vissrc =
+              gst_element_get_request_pad (playsink->audio_tee, "src_%u");
+        }
+        gst_pad_link_full (playsink->audio_tee_vissrc,
+            playsink->vischain->sinkpad, GST_PAD_LINK_CHECK_NOTHING);
+        gst_pad_link_full (srcpad, playsink->video_sinkpad_stream_synchronizer,
+            GST_PAD_LINK_CHECK_NOTHING);
+        gst_pad_link_full (playsink->video_srcpad_stream_synchronizer,
+            playsink->videochain->sinkpad, GST_PAD_LINK_CHECK_NOTHING);
+        gst_object_unref (srcpad);
+      }
+
+      /* Is a reconfiguration required? */
       if (playsink->vischain->vis != playsink->visualisation) {
         /* unlink the old plugin and unghost the pad */
         gst_pad_unlink (playsink->vischain->vispeerpad,
@@ -3674,22 +3727,6 @@ gst_play_sink_do_reconfigure (GstPlaySink * playsink)
             playsink->vischain->vissinkpad, GST_PAD_LINK_CHECK_NOTHING);
         gst_ghost_pad_set_target (GST_GHOST_PAD_CAST (playsink->vischain->
                 srcpad), playsink->vischain->vissrcpad);
-      } else {
-        srcpad =
-            gst_element_get_static_pad (playsink->vischain->chain.bin, "src");
-        add_chain (GST_PLAY_CHAIN (playsink->vischain), TRUE);
-        activate_chain (GST_PLAY_CHAIN (playsink->vischain), TRUE);
-        if (playsink->audio_tee_vissrc == NULL) {
-          playsink->audio_tee_vissrc =
-              gst_element_get_request_pad (playsink->audio_tee, "src_%u");
-        }
-        gst_pad_link_full (playsink->audio_tee_vissrc,
-            playsink->vischain->sinkpad, GST_PAD_LINK_CHECK_NOTHING);
-        gst_pad_link_full (srcpad, playsink->video_sinkpad_stream_synchronizer,
-            GST_PAD_LINK_CHECK_NOTHING);
-        gst_pad_link_full (playsink->video_srcpad_stream_synchronizer,
-            playsink->videochain->sinkpad, GST_PAD_LINK_CHECK_NOTHING);
-        gst_object_unref (srcpad);
       }
     }
   } else {
@@ -4633,7 +4670,9 @@ gst_play_sink_handle_message (GstBin * bin, GstMessage * message)
 
       if (format == GST_FORMAT_BUFFERS) {
         /* for the buffer format, we align the other streams */
-        if (playsink->audiochain) {
+        if (playsink->audiochain
+            && !gst_object_has_as_ancestor (GST_MESSAGE_SRC (message),
+                GST_OBJECT (playsink->audiochain->chain.bin))) {
           GstEvent *event;
 
           event =
@@ -4701,10 +4740,11 @@ gst_play_sink_handle_message (GstBin * bin, GstMessage * message)
  * to them in case it's source is different from the a/v stream's source.
  */
 static gboolean
-gst_play_sink_send_event_to_sink (GstPlaySink * playsink, GstEvent * event)
+gst_play_sink_send_event_to_sink (GstPlaySink * playsink, GstEvent * event,
+    gboolean force_video)
 {
   gboolean res = TRUE;
-  if (playsink->send_event_mode == MODE_FIRST) {
+  if (playsink->send_event_mode == MODE_FIRST || force_video) {
     if (playsink->textchain && playsink->textchain->sink) {
       gst_event_ref (event);
       if ((res =
@@ -4725,7 +4765,7 @@ gst_play_sink_send_event_to_sink (GstPlaySink * playsink, GstEvent * event)
       }
       GST_DEBUG_OBJECT (playsink, "Event failed when sent to video sink");
     }
-    if (playsink->audiochain) {
+    if (!force_video && playsink->audiochain) {
       gst_event_ref (event);
       if ((res =
               gst_element_send_event (playsink->audiochain->chain.bin,
@@ -4734,6 +4774,8 @@ gst_play_sink_send_event_to_sink (GstPlaySink * playsink, GstEvent * event)
         goto done;
       }
       GST_DEBUG_OBJECT (playsink, "Event failed when sent to audio sink");
+    } else {
+      res = FALSE;
     }
   } else {
     return
@@ -4759,7 +4801,7 @@ gst_play_sink_send_event (GstElement * element, GstEvent * event)
   switch (event_type) {
     case GST_EVENT_SEEK:
       GST_DEBUG_OBJECT (element, "Sending event to a sink");
-      res = gst_play_sink_send_event_to_sink (playsink, event);
+      res = gst_play_sink_send_event_to_sink (playsink, event, FALSE);
       break;
     case GST_EVENT_STEP:
     {
@@ -4772,7 +4814,7 @@ gst_play_sink_send_event (GstElement * element, GstEvent * event)
       if (format == GST_FORMAT_BUFFERS) {
         /* for buffers, we will try to step video frames, for other formats we
          * send the step to all sinks */
-        res = gst_play_sink_send_event_to_sink (playsink, event);
+        res = gst_play_sink_send_event_to_sink (playsink, event, TRUE);
       } else {
         res =
             GST_ELEMENT_CLASS (gst_play_sink_parent_class)->send_event (element,

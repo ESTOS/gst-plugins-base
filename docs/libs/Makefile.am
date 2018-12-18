@@ -22,7 +22,8 @@ DOC_MAIN_SGML_FILE=$(DOC_MODULE)-docs.sgml
 DOC_SOURCE_DIR=$(top_srcdir)/gst-libs/gst
 
 # Extra options to supply to gtkdoc-scan.
-SCAN_OPTIONS=--deprecated-guards="GST_DISABLE_DEPRECATED"
+SCAN_OPTIONS=--deprecated-guards="GST_DISABLE_DEPRECATED" \
+  --ignore-decorators="GST_API|GST_BASE_API|GST_CHECK_API|GST_CONTROLLER_API|GST_NET_API|GST_ALLOCATORS_API|GST_APP_API|GST_AUDIO_API|GST_FFT_API|GST_GL_API|GST_PBUTILS_API|GST_RIFF_API|GST_RTP_API|GST_RTSP_API|GST_SDP_API|GST_TAG_API|GST_VIDEO_API"
 
 # Extra options to supply to gtkdoc-mkdb.
 MKDB_OPTIONS=--sgml-mode  --output-format=xml
@@ -41,7 +42,9 @@ IGNORE_HFILES = pbutils-private.h gsttageditingprivate.h id3v2.h \
 	kiss_fftr_s16.h kiss_fftr_s32.h kiss_fft_s16.h kiss_fft_s32.h \
 	_kiss_fft_guts_f32.h _kiss_fft_guts_f64.h _kiss_fft_guts_s16.h \
 	_kiss_fft_guts_s16.h _kiss_fft_guts_s32.h _kiss_fft_guts_s32.h \
-	pbutils-marshal.h
+	pbutils-marshal.h \
+	$(top_srcdir)/gst-libs/gst/gl/gstglcontext_private.h \
+	$(top_srcdir)/gst-libs/gst/gl/gstglsl_private.h
 
 
 # Images to copy into HTML directory.
@@ -68,6 +71,7 @@ GTKDOC_LIBS = \
 	$(top_builddir)/gst-libs/gst/app/libgstapp-@GST_API_VERSION@.la \
 	$(top_builddir)/gst-libs/gst/pbutils/libgstpbutils-@GST_API_VERSION@.la \
 	$(top_builddir)/gst-libs/gst/riff/libgstriff-@GST_API_VERSION@.la \
+	$(top_builddir)/gst-libs/gst/gl/libgstgl-@GST_API_VERSION@.la \
 	$(GST_BASE_LIBS)
 
 # If you need to override some of the declarations, place them in this file

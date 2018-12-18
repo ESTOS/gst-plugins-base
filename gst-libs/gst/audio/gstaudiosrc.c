@@ -22,43 +22,20 @@
 
 /**
  * SECTION:gstaudiosrc
+ * @title: GstAudioSrc
  * @short_description: Simple base class for audio sources
  * @see_also: #GstAudioBaseSrc, #GstAudioRingBuffer, #GstAudioSrc.
  *
  * This is the most simple base class for audio sources that only requires
  * subclasses to implement a set of simple functions:
  *
- * <variablelist>
- *   <varlistentry>
- *     <term>open()</term>
- *     <listitem><para>Open the device.</para></listitem>
- *   </varlistentry>
- *   <varlistentry>
- *     <term>prepare()</term>
- *     <listitem><para>Configure the device with the specified format.</para></listitem>
- *   </varlistentry>
- *   <varlistentry>
- *     <term>read()</term>
- *     <listitem><para>Read samples from the device.</para></listitem>
- *   </varlistentry>
- *   <varlistentry>
- *     <term>reset()</term>
- *     <listitem><para>Unblock reads and flush the device.</para></listitem>
- *   </varlistentry>
- *   <varlistentry>
- *     <term>delay()</term>
- *     <listitem><para>Get the number of samples in the device but not yet read.
- *     </para></listitem>
- *   </varlistentry>
- *   <varlistentry>
- *     <term>unprepare()</term>
- *     <listitem><para>Undo operations done by prepare.</para></listitem>
- *   </varlistentry>
- *   <varlistentry>
- *     <term>close()</term>
- *     <listitem><para>Close the device.</para></listitem>
- *   </varlistentry>
- * </variablelist>
+ * * `open()` :Open the device.
+ * * `prepare()` :Configure the device with the specified format.
+ * * `read()` :Read samples from the device.
+ * * `reset()` :Unblock reads and flush the device.
+ * * `delay()` :Get the number of samples in the device but not yet read.
+ * * `unprepare()` :Undo operations done by prepare.
+ * * `close()` :Close the device.
  *
  * All scheduling of samples and timestamps is done in this base class
  * together with #GstAudioBaseSrc using a default implementation of a
@@ -69,6 +46,7 @@
 
 #include <gst/audio/audio.h>
 #include "gstaudiosrc.h"
+#include "gstaudioutilsprivate.h"
 
 GST_DEBUG_CATEGORY_STATIC (gst_audio_src_debug);
 #define GST_CAT_DEFAULT gst_audio_src_debug
@@ -215,6 +193,9 @@ audioringbuffer_thread_func (GstAudioRingBuffer * buf)
   if ((readfunc = csrc->read) == NULL)
     goto no_function;
 
+  if (G_UNLIKELY (!__gst_audio_set_thread_priority ()))
+    GST_WARNING_OBJECT (src, "failed to set thread priority");
+
   message = gst_message_new_stream_status (GST_OBJECT_CAST (buf),
       GST_STREAM_STATUS_TYPE_ENTER, GST_ELEMENT_CAST (src));
   g_value_init (&val, GST_TYPE_G_THREAD);
@@ -246,7 +227,8 @@ audioringbuffer_thread_func (GstAudioRingBuffer * buf)
         }
         left -= read;
         readptr += read;
-      } while (left > 0);
+
+      } while (left > 0 && g_atomic_int_get (&abuf->running));
 
       /* Update timestamp on buffer if required */
       gst_audio_ring_buffer_set_timestamp (buf, readseg, timestamp);

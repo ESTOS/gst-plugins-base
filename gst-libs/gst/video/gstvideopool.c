@@ -26,6 +26,7 @@ GST_DEBUG_CATEGORY_STATIC (gst_video_pool_debug);
 
 /**
  * SECTION:gstvideopool
+ * @title: GstVideoBufferPool
  * @short_description: GstBufferPool for raw video buffers
  * @see_also: #GstBufferPool
  *
@@ -70,7 +71,7 @@ gst_buffer_pool_config_set_video_alignment (GstStructure * config,
  * Get the video alignment from the bufferpool configuration @config in
  * in @align
  *
- * Returns: #TRUE if @config could be parsed correctly.
+ * Returns: %TRUE if @config could be parsed correctly.
  */
 gboolean
 gst_buffer_pool_config_get_video_alignment (GstStructure * config,
@@ -186,7 +187,9 @@ video_buffer_pool_set_config (GstBufferPool * pool, GstStructure * config)
       priv->video_align.stride_align[n] = max_align;
 
     /* apply the alignment to the info */
-    gst_video_info_align (&info, &priv->video_align);
+    if (!gst_video_info_align (&info, &priv->video_align))
+      goto failed_to_align;
+
     gst_buffer_pool_config_set_video_alignment (config, &priv->video_align);
 
     if (priv->params.align < max_align) {
@@ -227,7 +230,11 @@ wrong_size:
     GST_WARNING_OBJECT (pool,
         "Provided size is to small for the caps: %u", size);
     return FALSE;
-
+  }
+failed_to_align:
+  {
+    GST_WARNING_OBJECT (pool, "Failed to align");
+    return FALSE;
   }
 }
 
@@ -273,7 +280,7 @@ no_memory:
  * Create a new bufferpool that can allocate video frames. This bufferpool
  * supports all the video bufferpool options.
  *
- * Returns: (transfer floating): a new #GstBufferPool to allocate video frames
+ * Returns: (transfer full): a new #GstBufferPool to allocate video frames
  */
 GstBufferPool *
 gst_video_buffer_pool_new ()
@@ -281,6 +288,7 @@ gst_video_buffer_pool_new ()
   GstVideoBufferPool *pool;
 
   pool = g_object_new (GST_TYPE_VIDEO_BUFFER_POOL, NULL);
+  gst_object_ref_sink (pool);
 
   GST_LOG_OBJECT (pool, "new video buffer pool %p", pool);
 

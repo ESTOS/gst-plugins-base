@@ -22,6 +22,7 @@
 
 /**
  * SECTION:gstnavigation
+ * @title: GstNavigation
  * @short_description: Interface for creating, sending and parsing navigation
  * events.
  *
@@ -31,32 +32,21 @@
  * receiving navigation related bus events. One main usecase is DVD menu navigation.
  *
  * The main parts of the API are:
- * <itemizedlist>
- * <listitem>
- * <para>
- * The GstNavigation interface, implemented by elements which provide an application
- * with the ability to create and inject navigation events into the pipeline.
- * </para>
- * </listitem>
- * <listitem>
- * <para>
- * GstNavigation event handling API. GstNavigation events are created in response to
- * calls on a GstNavigation interface implementation, and sent in the pipeline. Upstream
- * elements can use the navigation event API functions to parse the contents of received
- * messages.
- * </para>
- * </listitem>
- * <listitem>
- * <para>
- * GstNavigation message handling API. GstNavigation messages may be sent on the message
- * bus to inform applications of navigation related changes in the pipeline, such as the
- * mouse moving over a clickable region, or the set of available angles changing.
- * </para><para>
+ *
+ * * The GstNavigation interface, implemented by elements which provide an application
+ *   with the ability to create and inject navigation events into the pipeline.
+ * * GstNavigation event handling API. GstNavigation events are created in response to
+ *   calls on a GstNavigation interface implementation, and sent in the pipeline. Upstream
+ *   elements can use the navigation event API functions to parse the contents of received
+ *   messages.
+ *
+ * * GstNavigation message handling API. GstNavigation messages may be sent on the message
+ *   bus to inform applications of navigation related changes in the pipeline, such as the
+ *   mouse moving over a clickable region, or the set of available angles changing.
+ *
  * The GstNavigation message functions provide functions for creating and parsing
  * custom bus messages for signaling GstNavigation changes.
- * </para>
- * </listitem>
- * </itemizedlist>
+ *
  */
 
 #ifdef HAVE_CONFIG_H
@@ -132,6 +122,9 @@ void
 gst_navigation_send_key_event (GstNavigation * navigation, const char *event,
     const char *key)
 {
+  g_return_if_fail (g_strcmp0 (event, "key-press") == 0 ||
+      g_strcmp0 (event, "key-release") == 0);
+
   gst_navigation_send_event (navigation,
       gst_structure_new (GST_NAVIGATION_EVENT_NAME, "event", G_TYPE_STRING,
           event, "key", G_TYPE_STRING, key, NULL));
@@ -157,6 +150,10 @@ void
 gst_navigation_send_mouse_event (GstNavigation * navigation, const char *event,
     int button, double x, double y)
 {
+  g_return_if_fail (g_strcmp0 (event, "mouse-button-press") == 0 ||
+      g_strcmp0 (event, "mouse-button-release") == 0 ||
+      g_strcmp0 (event, "mouse-move") == 0);
+
   gst_navigation_send_event (navigation,
       gst_structure_new (GST_NAVIGATION_EVENT_NAME, "event", G_TYPE_STRING,
           event, "button", G_TYPE_INT, button, "pointer_x", G_TYPE_DOUBLE, x,
@@ -287,7 +284,8 @@ gst_navigation_query_set_commands (GstQuery * query, gint n_cmds, ...)
  * gst_navigation_query_set_commandsv:
  * @query: a #GstQuery
  * @n_cmds: the number of commands to set.
- * @cmds: An array containing @n_cmds @GstNavigationCommand values.
+ * @cmds: (array length=n_cmds): An array containing @n_cmds
+ *     @GstNavigationCommand values.
  *
  * Set the #GstNavigation command query result fields in @query. The number
  * of commands passed must be equal to @n_commands.
@@ -313,7 +311,7 @@ gst_navigation_query_set_commandsv (GstQuery * query, gint n_cmds,
 /**
  * gst_navigation_query_parse_commands_length:
  * @query: a #GstQuery
- * @n_cmds: (out): the number of commands in this query.
+ * @n_cmds: (out) (optional): the number of commands in this query.
  *
  * Parse the number of commands in the #GstNavigation commands @query.
  *
@@ -344,7 +342,7 @@ gst_navigation_query_parse_commands_length (GstQuery * query, guint * n_cmds)
  * gst_navigation_query_parse_commands_nth:
  * @query: a #GstQuery
  * @nth: the nth command to retrieve.
- * @cmd: (out): a pointer to store the nth command into.
+ * @cmd: (out) (optional): a pointer to store the nth command into.
  *
  * Parse the #GstNavigation command query and retrieve the @nth command from
  * it into @cmd. If the list contains less elements than @nth, @cmd will be
@@ -425,10 +423,10 @@ gst_navigation_query_set_angles (GstQuery * query, guint cur_angle,
 /**
  * gst_navigation_query_parse_angles:
  * @query: a #GstQuery
- * @cur_angle: Pointer to a #guint into which to store the currently selected
- * angle value from the query, or NULL
- * @n_angles: Pointer to a #guint into which to store the number of angles
- * value from the query, or NULL
+ * @cur_angle: (out) (optional): Pointer to a #guint into which to store the
+ *     currently selected angle value from the query, or NULL
+ * @n_angles: (out) (optional): Pointer to a #guint into which to store the
+ *     number of angles value from the query, or NULL
  *
  * Parse the current angle number in the #GstNavigation angles @query into the
  * #guint pointed to by the @cur_angle variable, and the number of available
@@ -532,8 +530,8 @@ gst_navigation_message_new_mouse_over (GstObject * src, gboolean active)
 /**
  * gst_navigation_message_parse_mouse_over:
  * @message: A #GstMessage to inspect.
- * @active: A pointer to a gboolean to receive the active/inactive state,
- * or NULL.
+ * @active: (out) (optional): A pointer to a gboolean to receive the
+ *     active/inactive state, or NULL.
  *
  * Parse a #GstNavigation message of type #GST_NAVIGATION_MESSAGE_MOUSE_OVER
  * and extract the active/inactive flag. If the mouse over event is marked
@@ -586,8 +584,8 @@ gst_navigation_message_new_event (GstObject * src, GstEvent * event)
 /**
  * gst_navigation_message_parse_event:
  * @message: A #GstMessage to inspect.
- * @event: (out) (transfer full): a pointer to a #GstEvent to receive the
- *     contained navigation event.
+ * @event: (out) (optional) (transfer full): a pointer to a #GstEvent to receive
+ *     the contained navigation event.
  *
  * Parse a #GstNavigation message of type #GST_NAVIGATION_MESSAGE_EVENT
  * and extract contained #GstEvent. The caller must unref the @event when done
@@ -667,9 +665,10 @@ gst_navigation_message_new_angles_changed (GstObject * src, guint cur_angle,
 /**
  * gst_navigation_message_parse_angles_changed:
  * @message: A #GstMessage to inspect.
- * @cur_angle: A pointer to a #guint to receive the new current angle number,
- * or NULL
- * @n_angles: A pointer to a #guint to receive the new angle count, or NULL.
+ * @cur_angle: (out) (optional): A pointer to a #guint to receive the new
+ *     current angle number, or NULL
+ * @n_angles: (out) (optional): A pointer to a #guint to receive the new angle
+ *     count, or NULL.
  *
  * Parse a #GstNavigation message of type GST_NAVIGATION_MESSAGE_ANGLES_CHANGED
  * and extract the @cur_angle and @n_angles parameters.
@@ -744,9 +743,9 @@ gst_navigation_event_get_type (GstEvent * event)
 /**
  * gst_navigation_event_parse_key_event:
  * @event: A #GstEvent to inspect.
- * @key: A pointer to a location to receive the string identifying the key
- * press. The returned string is owned by the event, and valid only until the
- * event is unreffed.
+ * @key: (out) (optional) (transfer none): A pointer to a location to receive
+ *     the string identifying the key press. The returned string is owned by the
+ *     event, and valid only until the event is unreffed.
  */
 gboolean
 gst_navigation_event_parse_key_event (GstEvent * event, const gchar ** key)
@@ -771,13 +770,13 @@ gst_navigation_event_parse_key_event (GstEvent * event, const gchar ** key)
 /**
  * gst_navigation_event_parse_mouse_button_event:
  * @event: A #GstEvent to inspect.
- * @button: Pointer to a gint that will receive the button number associated
- * with the event.
- * @x: Pointer to a gdouble to receive the x coordinate of the mouse button
- * event.
- * @y: Pointer to a gdouble to receive the y coordinate of the mouse button
- * event.
- * 
+ * @button: (out) (optional): Pointer to a gint that will receive the button
+ *     number associated with the event.
+ * @x: (out) (optional): Pointer to a gdouble to receive the x coordinate of the
+ *     mouse button event.
+ * @y: (out) (optional): Pointer to a gdouble to receive the y coordinate of the
+ *     mouse button event.
+ *
  * Retrieve the details of either a #GstNavigation mouse button press event or
  * a mouse button release event. Determine which type the event is using
  * gst_navigation_event_get_type() to retrieve the #GstNavigationEventType.
@@ -813,8 +812,10 @@ gst_navigation_event_parse_mouse_button_event (GstEvent * event, gint * button,
 /**
  * gst_navigation_event_parse_mouse_move_event:
  * @event: A #GstEvent to inspect.
- * @x: Pointer to a gdouble to receive the x coordinate of the mouse movement.
- * @y: Pointer to a gdouble to receive the y coordinate of the mouse movement.
+ * @x: (out) (optional): Pointer to a gdouble to receive the x coordinate of the
+ *     mouse movement.
+ * @y: (out) (optional): Pointer to a gdouble to receive the y coordinate of the
+ *     mouse movement.
  *
  * Inspect a #GstNavigation mouse movement event and extract the coordinates
  * of the event.
@@ -845,8 +846,8 @@ gst_navigation_event_parse_mouse_move_event (GstEvent * event, gdouble * x,
 /**
  * gst_navigation_event_parse_command:
  * @event: A #GstEvent to inspect.
- * @command: Pointer to GstNavigationCommand to receive the type of the
- * navigation event.
+ * @command: (out) (optional): Pointer to GstNavigationCommand to receive the
+ *     type of the navigation event.
  *
  * Inspect a #GstNavigation command event and retrieve the enum value of the
  * associated command.

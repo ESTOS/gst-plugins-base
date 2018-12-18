@@ -23,25 +23,72 @@
 
 /**
  * SECTION:element-audioconvert
+ * @title: audioconvert
  *
  * Audioconvert converts raw audio buffers between various possible formats.
  * It supports integer to float conversion, width/depth conversion,
  * signedness and endianness conversion and channel transformations
  * (ie. upmixing and downmixing), as well as dithering and noise-shaping.
  *
- * <refsect2>
- * <title>Example launch line</title>
+ * ## Example launch line
  * |[
  * gst-launch-1.0 -v -m audiotestsrc ! audioconvert ! audio/x-raw,format=S8,channels=2 ! level ! fakesink silent=TRUE
- * ]| This pipeline converts audio to 8-bit.  The level element shows that
+ * ]|
+ *  This pipeline converts audio to 8-bit.  The level element shows that
  * the output levels still match the one for a sine wave.
  * |[
  * gst-launch-1.0 -v -m uridecodebin uri=file:///path/to/audio.flac ! audioconvert ! vorbisenc ! oggmux ! filesink location=audio.ogg
- * ]| The vorbis encoder takes float audio data instead of the integer data
+ * ]|
+ *  The vorbis encoder takes float audio data instead of the integer data
  * output by most other audio elements. This pipeline decodes a FLAC audio file
  * (or any other audio file for which decoders are installed) and re-encodes
  * it into an Ogg/Vorbis audio file.
- * </refsect2>
+ *
+ * A mix matrix can be passed to audioconvert, that will govern the
+ * remapping of input to output channels.
+ * ## Example matrix generation code
+ * To generate the matrix using code:
+ *
+ * |[
+ * GValue v = G_VALUE_INIT;
+ * GValue v2 = G_VALUE_INIT;
+ * GValue v3 = G_VALUE_INIT;
+ *
+ * g_value_init (&v2, GST_TYPE_ARRAY);
+ * g_value_init (&v3, G_TYPE_FLOAT);
+ * g_value_set_float (&v3, 1);
+ * gst_value_array_append_value (&v2, &v3);
+ * g_value_unset (&v3);
+ * [ Repeat for as many float as your input channels - unset and reinit v3 ]
+ * g_value_init (&v, GST_TYPE_ARRAY);
+ * gst_value_array_append_value (&v, &v2);
+ * g_value_unset (&v2);
+ * [ Repeat for as many v2's as your output channels - unset and reinit v2]
+ * g_object_set_property (G_OBJECT (audioconvert), "mix-matrix", &v);
+ * g_value_unset (&v);
+ * ]|
+ *
+ * ## Example launch line
+ * |[
+ * gst-launch-1.0 audiotestsrc ! audio/x-raw, channels=4 ! audioconvert mix-matrix="<<(float)1.0, (float)0.0, (float)0.0, (float)0.0>, <(float)0.0, (float)1.0, (float)0.0, (float)0.0>>" ! audio/x-raw,channels=2 ! autoaudiosink
+ * ]|
+ *
+ * > If an empty mix matrix is specified, a (potentially truncated)
+ * > identity matrix will be generated.
+ *
+ * ## Example empty matrix generation code
+ * |[
+ * GValue v = G_VALUE_INIT;
+ *
+ * g_value_init (&v, GST_TYPE_ARRAY);
+ * g_object_set_property (G_OBJECT (audioconvert), "mix-matrix", &v);
+ * g_value_unset (&v);
+ * ]|
+ *
+ * ## Example empty matrix launch line
+ * |[
+ * gst-launch-1.0 -v audiotestsrc ! audio/x-raw,channels=8 ! audioconvert mix-matrix="<>" ! audio/x-raw,channels=16,channel-mask=\(bitmask\)0x0000000000000000 ! fakesink
+ * ]|
  */
 
 /*
@@ -85,6 +132,8 @@ static gboolean gst_audio_convert_set_caps (GstBaseTransform * base,
     GstCaps * incaps, GstCaps * outcaps);
 static GstFlowReturn gst_audio_convert_transform (GstBaseTransform * base,
     GstBuffer * inbuf, GstBuffer * outbuf);
+static GstFlowReturn gst_audio_convert_transform_ip (GstBaseTransform * base,
+    GstBuffer * buf);
 static gboolean gst_audio_convert_transform_meta (GstBaseTransform * trans,
     GstBuffer * outbuf, GstMeta * meta, GstBuffer * inbuf);
 static GstFlowReturn gst_audio_convert_submit_input_buffer (GstBaseTransform *
@@ -106,6 +155,7 @@ enum
   PROP_0,
   PROP_DITHERING,
   PROP_NOISE_SHAPING,
+  PROP_MIX_MATRIX,
 };
 
 #define DEBUG_INIT \
@@ -158,13 +208,24 @@ gst_audio_convert_class_init (GstAudioConvertClass * klass)
           GST_TYPE_AUDIO_NOISE_SHAPING_METHOD, GST_AUDIO_NOISE_SHAPING_NONE,
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
-  gst_element_class_add_pad_template (element_class,
-      gst_static_pad_template_get (&gst_audio_convert_src_template));
-  gst_element_class_add_pad_template (element_class,
-      gst_static_pad_template_get (&gst_audio_convert_sink_template));
-  gst_element_class_set_static_metadata (element_class,
-      "Audio converter", "Filter/Converter/Audio",
-      "Convert audio to different formats", "Benjamin Otte <otte@gnome.org>");
+  g_object_class_install_property (gobject_class, PROP_MIX_MATRIX,
+      gst_param_spec_array ("mix-matrix",
+          "Input/output channel matrix",
+          "Transformation matrix for input/output channels",
+          gst_param_spec_array ("matrix-rows", "rows", "rows",
+              g_param_spec_float ("matrix-cols", "cols", "cols",
+                  -1, 1, 0,
+                  G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS),
+              G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS),
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+  gst_element_class_add_static_pad_template (element_class,
+      &gst_audio_convert_src_template);
+  gst_element_class_add_static_pad_template (element_class,
+      &gst_audio_convert_sink_template);
+  gst_element_class_set_static_metadata (element_class, "Audio converter",
+      "Filter/Converter/Audio", "Convert audio to different formats",
+      "Benjamin Otte <otte@gnome.org>");
 
   basetransform_class->get_unit_size =
       GST_DEBUG_FUNCPTR (gst_audio_convert_get_unit_size);
@@ -176,12 +237,15 @@ gst_audio_convert_class_init (GstAudioConvertClass * klass)
       GST_DEBUG_FUNCPTR (gst_audio_convert_set_caps);
   basetransform_class->transform =
       GST_DEBUG_FUNCPTR (gst_audio_convert_transform);
+  basetransform_class->transform_ip =
+      GST_DEBUG_FUNCPTR (gst_audio_convert_transform_ip);
   basetransform_class->transform_meta =
       GST_DEBUG_FUNCPTR (gst_audio_convert_transform_meta);
   basetransform_class->submit_input_buffer =
       GST_DEBUG_FUNCPTR (gst_audio_convert_submit_input_buffer);
 
   basetransform_class->passthrough_on_same_caps = TRUE;
+  basetransform_class->transform_ip_on_passthrough = FALSE;
 }
 
 static void
@@ -189,6 +253,7 @@ gst_audio_convert_init (GstAudioConvert * this)
 {
   this->dither = GST_AUDIO_DITHER_TPDF;
   this->ns = GST_AUDIO_NOISE_SHAPING_NONE;
+  g_value_init (&this->mix_matrix, GST_TYPE_ARRAY);
 
   gst_base_transform_set_gap_aware (GST_BASE_TRANSFORM (this), TRUE);
 }
@@ -202,6 +267,8 @@ gst_audio_convert_dispose (GObject * obj)
     gst_audio_converter_free (this->convert);
     this->convert = NULL;
   }
+
+  g_value_unset (&this->mix_matrix);
 
   G_OBJECT_CLASS (parent_class)->dispose (obj);
 }
@@ -232,47 +299,43 @@ parse_error:
   }
 }
 
-/* copies the given caps */
-static GstCaps *
-gst_audio_convert_caps_remove_format_info (GstCaps * caps, gboolean channels)
+static gboolean
+remove_format_from_structure (GstCapsFeatures * features,
+    GstStructure * structure, gpointer user_data G_GNUC_UNUSED)
 {
-  GstStructure *st;
-  gint i, n;
-  GstCaps *res;
-  guint64 channel_mask;
+  gst_structure_remove_field (structure, "format");
+  return TRUE;
+}
 
-  res = gst_caps_new_empty ();
+static gboolean
+remove_channels_from_structure (GstCapsFeatures * features, GstStructure * s,
+    gpointer user_data)
+{
+  guint64 mask;
+  gint channels;
+  GstAudioConvert *this = GST_AUDIO_CONVERT (user_data);
 
-  n = gst_caps_get_size (caps);
-  for (i = 0; i < n; i++) {
-    gboolean remove_channels = FALSE;
-
-    st = gst_caps_get_structure (caps, i);
-
-    /* If this is already expressed by the existing caps
-     * skip this structure */
-    if (i > 0 && gst_caps_is_subset_structure (res, st))
-      continue;
-
-    st = gst_structure_copy (st);
-    gst_structure_remove_field (st, "format");
-
-    /* Only remove the channels and channel-mask for non-NONE layouts */
-    if (gst_structure_get (st, "channel-mask", GST_TYPE_BITMASK, &channel_mask,
-            NULL)) {
-      if (channel_mask != 0)
-        remove_channels = TRUE;
-    } else {
-      remove_channels = TRUE;
-    }
-
-    if (remove_channels && channels)
-      gst_structure_remove_fields (st, "channel-mask", "channels", NULL);
-
-    gst_caps_append_structure (res, st);
+  /* Only remove the channels and channel-mask for non-NONE layouts,
+   * or if a mix matrix was manually specified */
+  if (this->mix_matrix_was_set ||
+      !gst_structure_get (s, "channel-mask", GST_TYPE_BITMASK, &mask, NULL) ||
+      (mask != 0 || (gst_structure_get_int (s, "channels", &channels)
+              && channels == 1))) {
+    gst_structure_remove_fields (s, "channel-mask", "channels", NULL);
   }
 
-  return res;
+  return TRUE;
+}
+
+static gboolean
+add_other_channels_to_structure (GstCapsFeatures * features, GstStructure * s,
+    gpointer user_data)
+{
+  gint other_channels = GPOINTER_TO_INT (user_data);
+
+  gst_structure_set (s, "channels", G_TYPE_INT, other_channels, NULL);
+
+  return TRUE;
 }
 
 /* The caps can be transformed into any other caps with format info removed.
@@ -284,9 +347,29 @@ gst_audio_convert_transform_caps (GstBaseTransform * btrans,
 {
   GstCaps *tmp, *tmp2;
   GstCaps *result;
+  GstAudioConvert *this = GST_AUDIO_CONVERT (btrans);
 
-  /* Get all possible caps that we can transform to */
-  tmp = gst_audio_convert_caps_remove_format_info (caps, TRUE);
+  tmp = gst_caps_copy (caps);
+
+  gst_caps_map_in_place (tmp, remove_format_from_structure, NULL);
+  gst_caps_map_in_place (tmp, remove_channels_from_structure, btrans);
+
+  /* We can infer the required input / output channels based on the
+   * matrix dimensions */
+  if (gst_value_array_get_size (&this->mix_matrix)) {
+    gint other_channels;
+
+    if (direction == GST_PAD_SRC) {
+      const GValue *first_row =
+          gst_value_array_get_value (&this->mix_matrix, 0);
+      other_channels = gst_value_array_get_size (first_row);
+    } else {
+      other_channels = gst_value_array_get_size (&this->mix_matrix);
+    }
+
+    gst_caps_map_in_place (tmp, add_other_channels_to_structure,
+        GINT_TO_POINTER (other_channels));
+  }
 
   if (filter) {
     tmp2 = gst_caps_intersect_full (filter, tmp, GST_CAPS_INTERSECT_FIRST);
@@ -302,41 +385,41 @@ gst_audio_convert_transform_caps (GstBaseTransform * btrans,
   return result;
 }
 
+/* Count the number of bits set
+ * Optimized for the common case, assuming that the number of channels
+ * (i.e. bits set) is small
+ */
 static gint
 n_bits_set (guint64 x)
 {
-  gint i;
-  gint c = 0;
-  guint64 y = 1;
+  gint c;
 
-  for (i = 0; i < 64; i++) {
-    if (x & y)
-      c++;
-    y <<= 1;
-  }
+  for (c = 0; x; c++)
+    x &= x - 1;
 
   return c;
 }
 
+/* Reduce the mask to the n_chans lowest set bits
+ *
+ * The algorithm clears the n_chans lowest set bits and subtracts the
+ * result from the original mask to get the desired mask.
+ * It is optimized for the common case where n_chans is a small
+ * number. In the worst case, however, it stops after 64 iterations.
+ */
 static guint64
 find_suitable_mask (guint64 mask, gint n_chans)
 {
-  guint64 intersection;
-  gint i;
+  guint64 x = mask;
 
-  i = 0;
+  for (; x && n_chans; n_chans--)
+    x &= x - 1;
 
-  g_assert (n_bits_set (mask) >= n_chans);
+  g_assert (x || n_chans == 0);
+  /* assertion fails if mask contained less bits than n_chans
+   * or n_chans was < 0 */
 
-  intersection = mask;
-  do {
-    intersection = intersection & ((~G_GUINT64_CONSTANT (0)) >> i);
-    i++;
-  } while (n_bits_set (intersection) > n_chans && i < 64);
-
-  if (i < 64)
-    return intersection;
-  return 0;
+  return mask - x;
 }
 
 static void
@@ -575,12 +658,12 @@ gst_audio_convert_fixate_channels (GstBaseTransform * base, GstStructure * ins,
    * one reason or another, so just pick a default layout (we could be smarter
    * and try to add/remove channels from the input layout, or pick a default
    * layout based on LFE-presence in input layout, but let's save that for
-   * another day) */
-  if (out_chans > 0
+   * another day). For mono, no mask is required and the fallback mask is 0 */
+  if (out_chans > 1
       && (out_mask = gst_audio_channel_get_fallback_mask (out_chans))) {
     GST_DEBUG_OBJECT (base, "using default channel layout as fallback");
     gst_structure_set (outs, "channel-mask", GST_TYPE_BITMASK, out_mask, NULL);
-  } else {
+  } else if (out_chans > 1) {
     GST_ERROR_OBJECT (base, "Have no default layout for %d channels",
         out_chans);
   }
@@ -601,12 +684,11 @@ gst_audio_convert_fixate_caps (GstBaseTransform * base,
 
   result = gst_caps_intersect (othercaps, caps);
   if (gst_caps_is_empty (result)) {
-    GstCaps *removed;
+    GstCaps *removed = gst_caps_copy (caps);
 
     if (result)
       gst_caps_unref (result);
-    /* try to preserve channels */
-    removed = gst_audio_convert_caps_remove_format_info (caps, FALSE);
+    gst_caps_map_in_place (removed, remove_format_from_structure, NULL);
     result = gst_caps_intersect (othercaps, removed);
     gst_caps_unref (removed);
     if (gst_caps_is_empty (result)) {
@@ -646,6 +728,8 @@ gst_audio_convert_set_caps (GstBaseTransform * base, GstCaps * incaps,
   GstAudioConvert *this = GST_AUDIO_CONVERT (base);
   GstAudioInfo in_info;
   GstAudioInfo out_info;
+  gboolean in_place;
+  GstStructure *config;
 
   GST_DEBUG_OBJECT (base, "incaps %" GST_PTR_FORMAT ", outcaps %"
       GST_PTR_FORMAT, incaps, outcaps);
@@ -660,15 +744,23 @@ gst_audio_convert_set_caps (GstBaseTransform * base, GstCaps * incaps,
   if (!gst_audio_info_from_caps (&out_info, outcaps))
     goto invalid_out;
 
-  this->convert = gst_audio_converter_new (0, &in_info, &out_info,
-      gst_structure_new ("GstAudioConverterConfig",
-          GST_AUDIO_CONVERTER_OPT_DITHER_METHOD, GST_TYPE_AUDIO_DITHER_METHOD,
-          this->dither,
-          GST_AUDIO_CONVERTER_OPT_NOISE_SHAPING_METHOD,
-          GST_TYPE_AUDIO_NOISE_SHAPING_METHOD, this->ns, NULL));
+  config = gst_structure_new ("GstAudioConverterConfig",
+      GST_AUDIO_CONVERTER_OPT_DITHER_METHOD, GST_TYPE_AUDIO_DITHER_METHOD,
+      this->dither,
+      GST_AUDIO_CONVERTER_OPT_NOISE_SHAPING_METHOD,
+      GST_TYPE_AUDIO_NOISE_SHAPING_METHOD, this->ns, NULL);
+
+  if (this->mix_matrix_was_set)
+    gst_structure_set_value (config, GST_AUDIO_CONVERTER_OPT_MIX_MATRIX,
+        &this->mix_matrix);
+
+  this->convert = gst_audio_converter_new (0, &in_info, &out_info, config);
 
   if (this->convert == NULL)
     goto no_converter;
+
+  in_place = gst_audio_converter_supports_inplace (this->convert);
+  gst_base_transform_set_in_place (base, in_place);
 
   this->in_info = in_info;
   this->out_info = out_info;
@@ -693,13 +785,14 @@ no_converter:
   }
 }
 
+/* if called through gst_audio_convert_transform_ip() inbuf == outbuf */
 static GstFlowReturn
 gst_audio_convert_transform (GstBaseTransform * base, GstBuffer * inbuf,
     GstBuffer * outbuf)
 {
   GstFlowReturn ret;
   GstAudioConvert *this = GST_AUDIO_CONVERT (base);
-  GstMapInfo srcmap, dstmap;
+  GstMapInfo srcmap = { NULL, }, dstmap;
   gint insize, outsize;
   gboolean inbuf_writable;
   GstAudioConverterFlags flags;
@@ -716,18 +809,28 @@ gst_audio_convert_transform (GstBaseTransform * base, GstBuffer * inbuf,
   if (insize == 0 || outsize == 0)
     return GST_FLOW_OK;
 
-  inbuf_writable = gst_buffer_is_writable (inbuf)
-      && gst_buffer_n_memory (inbuf) == 1
-      && gst_memory_is_writable (gst_buffer_peek_memory (inbuf, 0));
+  gst_buffer_resize (outbuf, 0, outsize);
 
   /* get src and dst data */
-  gst_buffer_map (inbuf, &srcmap,
-      inbuf_writable ? GST_MAP_READWRITE : GST_MAP_READ);
-  gst_buffer_map (outbuf, &dstmap, GST_MAP_WRITE);
+  if (inbuf != outbuf) {
+    inbuf_writable = gst_buffer_is_writable (inbuf)
+        && gst_buffer_n_memory (inbuf) == 1
+        && gst_memory_is_writable (gst_buffer_peek_memory (inbuf, 0));
+
+    if (!gst_buffer_map (inbuf, &srcmap,
+            inbuf_writable ? GST_MAP_READWRITE : GST_MAP_READ))
+      goto inmap_error;
+  } else {
+    inbuf_writable = TRUE;
+  }
+  if (!gst_buffer_map (outbuf, &dstmap, GST_MAP_WRITE))
+    goto outmap_error;
 
   /* check in and outsize */
-  if (srcmap.size < insize)
-    goto wrong_size;
+  if (inbuf != outbuf) {
+    if (srcmap.size < insize)
+      goto wrong_size;
+  }
   if (dstmap.size < outsize)
     goto wrong_size;
 
@@ -741,7 +844,7 @@ gst_audio_convert_transform (GstBaseTransform * base, GstBuffer * inbuf,
     gpointer out[1] = { dstmap.data };
 
     if (!gst_audio_converter_samples (this->convert, flags,
-            in, samples, out, samples))
+            inbuf != outbuf ? in : out, samples, out, samples))
       goto convert_error;
   } else {
     /* Create silence buffer */
@@ -751,7 +854,8 @@ gst_audio_convert_transform (GstBaseTransform * base, GstBuffer * inbuf,
 
 done:
   gst_buffer_unmap (outbuf, &dstmap);
-  gst_buffer_unmap (inbuf, &srcmap);
+  if (inbuf != outbuf)
+    gst_buffer_unmap (inbuf, &srcmap);
 
   return ret;
 
@@ -773,6 +877,26 @@ convert_error:
     ret = GST_FLOW_ERROR;
     goto done;
   }
+inmap_error:
+  {
+    GST_ELEMENT_ERROR (this, STREAM, FORMAT,
+        (NULL), ("failed to map input buffer"));
+    return GST_FLOW_ERROR;
+  }
+outmap_error:
+  {
+    GST_ELEMENT_ERROR (this, STREAM, FORMAT,
+        (NULL), ("failed to map output buffer"));
+    if (inbuf != outbuf)
+      gst_buffer_unmap (inbuf, &srcmap);
+    return GST_FLOW_ERROR;
+  }
+}
+
+static GstFlowReturn
+gst_audio_convert_transform_ip (GstBaseTransform * base, GstBuffer * buf)
+{
+  return gst_audio_convert_transform (base, buf, buf);
 }
 
 static gboolean
@@ -824,6 +948,24 @@ gst_audio_convert_set_property (GObject * object, guint prop_id,
     case PROP_NOISE_SHAPING:
       this->ns = g_value_get_enum (value);
       break;
+    case PROP_MIX_MATRIX:
+      if (!gst_value_array_get_size (value)) {
+        g_value_copy (value, &this->mix_matrix);
+        this->mix_matrix_was_set = TRUE;
+      } else {
+        const GValue *first_row = gst_value_array_get_value (value, 0);
+
+        if (gst_value_array_get_size (first_row)) {
+          if (gst_value_array_get_size (&this->mix_matrix))
+            g_value_unset (&this->mix_matrix);
+
+          g_value_copy (value, &this->mix_matrix);
+          this->mix_matrix_was_set = TRUE;
+        } else {
+          g_warning ("Empty mix matrix's first row");
+        }
+      }
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -842,6 +984,10 @@ gst_audio_convert_get_property (GObject * object, guint prop_id,
       break;
     case PROP_NOISE_SHAPING:
       g_value_set_enum (value, this->ns);
+      break;
+    case PROP_MIX_MATRIX:
+      if (this->mix_matrix_was_set)
+        g_value_copy (&this->mix_matrix, value);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);

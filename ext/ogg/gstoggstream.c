@@ -172,7 +172,7 @@ gst_ogg_stream_granulepos_to_key_granule (GstOggStream * pad, gint64 granulepos)
   if (mappers[pad->map].granulepos_to_key_granule_func)
     return mappers[pad->map].granulepos_to_key_granule_func (pad, granulepos);
 
-  if (granulepos == -1 || granulepos == 0) {
+  if (granulepos == -1 || granulepos == 0 || pad->granuleshift == G_MAXUINT32) {
     return granulepos;
   }
 
@@ -289,7 +289,7 @@ gst_ogg_stream_update_stats (GstOggStream * pad, ogg_packet * packet)
   if (!mappers[pad->map].get_headers_func)
     return;
 
-  return mappers[pad->map].update_stats_func (pad, packet);
+  mappers[pad->map].update_stats_func (pad, packet);
 }
 
 /* some generic functions */
@@ -311,7 +311,7 @@ granulepos_to_granule_default (GstOggStream * pad, gint64 granulepos)
 {
   gint64 keyindex, keyoffset;
 
-  if (pad->granuleshift != 0) {
+  if (pad->granuleshift != 0 && pad->granuleshift != G_MAXUINT32) {
     keyindex = granulepos >> pad->granuleshift;
     keyoffset = granulepos - (keyindex << pad->granuleshift);
     return keyindex + keyoffset;
@@ -327,7 +327,7 @@ granule_to_granulepos_default (GstOggStream * pad, gint64 granule,
 {
   gint64 keyoffset;
 
-  if (pad->granuleshift != 0) {
+  if (pad->granuleshift != 0 && pad->granuleshift != G_MAXUINT32) {
     /* If we don't know where the previous keyframe is yet, assume it is
        at 0 or 1, depending on bitstream version. If nothing else, this
        avoids getting negative granpos back. */
@@ -392,7 +392,7 @@ tag_list_from_vorbiscomment_packet (ogg_packet * packet,
   }
 
   if (encoder) {
-    if (encoder[0])
+    if (encoder[0] && g_utf8_validate (encoder, -1, NULL))
       gst_tag_list_add (list, GST_TAG_MERGE_REPLACE, GST_TAG_ENCODER, encoder,
           NULL);
     g_free (encoder);
@@ -424,6 +424,12 @@ setup_theora_mapper (GstOggStream * pad, ogg_packet * packet)
 
   pad->granulerate_n = GST_READ_UINT32_BE (data + 22);
   pad->granulerate_d = GST_READ_UINT32_BE (data + 26);
+  if (pad->granulerate_n == 0 || pad->granulerate_d == 0) {
+    GST_WARNING ("frame rate %d/%d", pad->granulerate_n, pad->granulerate_d);
+    pad->granulerate_n = 0;
+    pad->granulerate_d = 0;
+    return FALSE;
+  }
 
   par_n = GST_READ_UINT24_BE (data + 30);
   par_d = GST_READ_UINT24_BE (data + 33);
@@ -434,6 +440,14 @@ setup_theora_mapper (GstOggStream * pad, ogg_packet * packet)
   /* 2 bits + 3 bits = 5 bits KFGSHIFT */
   pad->granuleshift = ((GST_READ_UINT8 (data + 40) & 0x03) << 3) +
       (GST_READ_UINT8 (data + 41) >> 5);
+  if (pad->granuleshift >= 63) {
+    /* Granuleshift can't be greater than the storage size of a granule */
+    GST_WARNING ("Invalid granuleshift (%u >= 63)", pad->granuleshift);
+    pad->granulerate_n = 0;
+    pad->granulerate_d = 0;
+    pad->granuleshift = -1;
+    return FALSE;
+  }
   GST_LOG ("granshift: %d", pad->granuleshift);
 
   pad->is_video = TRUE;
@@ -442,11 +456,6 @@ setup_theora_mapper (GstOggStream * pad, ogg_packet * packet)
 
   pad->bitrate = GST_READ_UINT24_BE (data + 37);
   GST_LOG ("bit rate: %d", pad->bitrate);
-
-  if (pad->granulerate_n == 0 || pad->granulerate_d == 0) {
-    GST_WARNING ("frame rate %d/%d", pad->granulerate_n, pad->granulerate_d);
-    return FALSE;
-  }
 
   /* The interpretation of the granule position has changed with 3.2.1.
      The granule is now made from the number of frames encoded, rather than
@@ -478,7 +487,7 @@ granulepos_to_granule_theora (GstOggStream * pad, gint64 granulepos)
 {
   gint64 keyindex, keyoffset;
 
-  if (pad->granuleshift != 0) {
+  if (pad->granuleshift != 0 && pad->granuleshift != G_MAXUINT32) {
     keyindex = granulepos >> pad->granuleshift;
     keyoffset = granulepos - (keyindex << pad->granuleshift);
     if (pad->theora_has_zero_keyoffset) {
@@ -495,7 +504,7 @@ is_granulepos_keyframe_theora (GstOggStream * pad, gint64 granulepos)
 {
   gint64 frame_mask;
 
-  if (granulepos == (gint64) - 1)
+  if (granulepos == (gint64) - 1 || pad->granuleshift == G_MAXUINT32)
     return FALSE;
 
   frame_mask = (G_GUINT64_CONSTANT (1) << pad->granuleshift) - 1;
@@ -551,6 +560,11 @@ setup_dirac_mapper (GstOggStream * pad, ogg_packet * packet)
     return FALSE;
   }
 
+  if (header.interlaced_coding != 0) {
+    GST_DEBUG ("non-progressive Dirac coding not implemented");
+    return FALSE;
+  }
+
   pad->is_video = TRUE;
   pad->always_flush_page = TRUE;
   pad->granulerate_n = header.frame_rate_numerator * 2;
@@ -558,11 +572,6 @@ setup_dirac_mapper (GstOggStream * pad, ogg_packet * packet)
   pad->granuleshift = 22;
   pad->n_header_packets = 1;
   pad->frame_size = 2;
-
-  if (header.interlaced_coding != 0) {
-    GST_DEBUG ("non-progressive Dirac coding not implemented");
-    return FALSE;
-  }
 
   pad->caps = gst_caps_new_simple ("video/x-dirac",
       "width", G_TYPE_INT, header.width,
@@ -811,6 +820,9 @@ extract_tags_vp8 (GstOggStream * pad, ogg_packet * packet)
     tag_list_from_vorbiscomment_packet (packet,
         (const guint8 *) "OVP80\2 ", 7, &pad->taglist);
 
+    if (!pad->taglist)
+      pad->taglist = gst_tag_list_new_empty ();
+
     gst_tag_list_add (pad->taglist, GST_TAG_MERGE_REPLACE,
         GST_TAG_VIDEO_CODEC, "VP8", NULL);
   }
@@ -853,8 +865,15 @@ setup_vorbis_mapper (GstOggStream * pad, ogg_packet * packet)
   data += 4;
   chans = GST_READ_UINT8 (data);
   data += 1;
+
   pad->granulerate_n = GST_READ_UINT32_LE (data);
   pad->granulerate_d = 1;
+  if (pad->granulerate_n == 0) {
+    pad->granulerate_n = 0;
+    pad->granulerate_d = 0;
+    return FALSE;
+  }
+
   pad->granuleshift = 0;
   pad->preroll = 2;
   pad->last_size = 0;
@@ -879,9 +898,6 @@ setup_vorbis_mapper (GstOggStream * pad, ogg_packet * packet)
   GST_LOG ("bit rate: %d", pad->bitrate);
 
   pad->n_header_packets = 3;
-
-  if (pad->granulerate_n == 0)
-    return FALSE;
 
   gst_parse_vorbis_header_packet (pad, packet);
 
@@ -975,8 +991,15 @@ setup_speex_mapper (GstOggStream * pad, ogg_packet * packet)
   guint chans;
 
   data += 8 + 20 + 4 + 4;
+
   pad->granulerate_n = GST_READ_UINT32_LE (data);
   pad->granulerate_d = 1;
+  if (pad->granulerate_n == 0) {
+    pad->granulerate_n = 0;
+    pad->granulerate_d = 0;
+    return FALSE;
+  }
+
   pad->granuleshift = 0;
 
   data += 4 + 4 + 4;
@@ -990,9 +1013,6 @@ setup_speex_mapper (GstOggStream * pad, ogg_packet * packet)
   pad->n_header_packets = GST_READ_UINT32_LE (packet->packet + 68) + 2;
   pad->frame_size = GST_READ_UINT32_LE (packet->packet + 64) *
       GST_READ_UINT32_LE (packet->packet + 56);
-
-  if (pad->granulerate_n == 0)
-    return FALSE;
 
   pad->caps = gst_caps_new_simple ("audio/x-speex", "rate", G_TYPE_INT,
       pad->granulerate_n, "channels", G_TYPE_INT, chans, NULL);
@@ -1047,6 +1067,9 @@ static gboolean
 is_header_fLaC (GstOggStream * pad, ogg_packet * packet)
 {
   if (pad->n_header_packets_seen == 1) {
+    if (packet->bytes < 17)
+      return FALSE;
+
     pad->granulerate_n = (packet->packet[14] << 12) |
         (packet->packet[15] << 4) | ((packet->packet[16] >> 4) & 0xf);
   }
@@ -1068,15 +1091,19 @@ setup_flac_mapper (GstOggStream * pad, ogg_packet * packet)
 
   pad->granulerate_n = (GST_READ_UINT32_BE (data + 27) & 0xFFFFF000) >> 12;
   pad->granulerate_d = 1;
+
+  if (pad->granulerate_n == 0) {
+    pad->granulerate_n = 0;
+    pad->granulerate_d = 0;
+    return FALSE;
+  }
+
   pad->granuleshift = 0;
   chans = ((GST_READ_UINT32_BE (data + 27) & 0x00000E00) >> 9) + 1;
 
   GST_DEBUG ("sample rate: %d, channels: %u", pad->granulerate_n, chans);
 
   pad->n_header_packets = GST_READ_UINT16_BE (packet->packet + 7);
-
-  if (pad->granulerate_n == 0)
-    return FALSE;
 
   pad->caps = gst_caps_new_simple ("audio/x-flac", "rate", G_TYPE_INT,
       pad->granulerate_n, "channels", G_TYPE_INT, chans, NULL);
@@ -1142,6 +1169,9 @@ extract_tags_flac (GstOggStream * pad, ogg_packet * packet)
     tag_list_from_vorbiscomment_packet (packet,
         packet->packet, 4, &pad->taglist);
 
+    if (!pad->taglist)
+      pad->taglist = gst_tag_list_new_empty ();
+
     gst_tag_list_add (pad->taglist, GST_TAG_MERGE_REPLACE,
         GST_TAG_AUDIO_CODEC, "FLAC", NULL);
   }
@@ -1155,6 +1185,11 @@ setup_fishead_mapper (GstOggStream * pad, ogg_packet * packet)
   guint8 *data;
   gint64 prestime_n, prestime_d;
   gint64 basetime_n, basetime_d;
+
+  if (packet->bytes < 44) {
+    GST_DEBUG ("Not enough data for fishead header");
+    return FALSE;
+  }
 
   data = packet->packet;
 
@@ -1306,8 +1341,6 @@ gst_ogg_map_add_fisbone (GstOggStream * pad, GstOggStream * skel_pad,
   /* skip "fisbone\0" + headers offset + serialno + num headers */
   data += 8 + 4 + 4 + 4;
 
-  pad->have_fisbone = TRUE;
-
   /* We don't overwrite whatever was set before by the format-specific
      setup: skeleton contains wrong information sometimes, and the codec
      headers are authoritative.
@@ -1321,7 +1354,17 @@ gst_ogg_map_add_fisbone (GstOggStream * pad, GstOggStream * skel_pad,
   }
   if (pad->granuleshift == G_MAXUINT32) {
     pad->granuleshift = GST_READ_UINT8 (data + 28);
+    if (pad->granuleshift >= 63) {
+      /* Granuleshift can't be greater than the storage size of a granule */
+      GST_WARNING ("Invalid granuleshift (%u >= 63)", pad->granuleshift);
+      pad->granulerate_n = 0;
+      pad->granulerate_d = 0;
+      pad->granuleshift = -1;
+      return FALSE;
+    }
   }
+
+  pad->have_fisbone = TRUE;
 
   start_granule = GST_READ_UINT64_LE (data + 16);
   pad->preroll = GST_READ_UINT32_LE (data + 24);
@@ -1564,7 +1607,7 @@ static gint64
 packet_duration_ogm (GstOggStream * pad, ogg_packet * packet)
 {
   const guint8 *data;
-  int samples;
+  gint64 samples;
   int offset;
   int n;
 
@@ -1572,7 +1615,7 @@ packet_duration_ogm (GstOggStream * pad, ogg_packet * packet)
   offset = 1 + (((data[0] & 0xc0) >> 6) | ((data[0] & 0x02) << 1));
 
   if (offset > packet->bytes) {
-    GST_ERROR ("buffer too small");
+    GST_WARNING ("buffer too small");
     return -1;
   }
 
@@ -1594,6 +1637,13 @@ setup_ogmaudio_mapper (GstOggStream * pad, ogg_packet * packet)
   pad->granulerate_n = GST_READ_UINT64_LE (data + 25);
   pad->granulerate_d = 1;
 
+  GST_LOG ("sample rate: %d", pad->granulerate_n);
+  if (pad->granulerate_n == 0) {
+    pad->granulerate_n = 0;
+    pad->granulerate_d = 0;
+    return FALSE;
+  }
+
   fourcc = GST_READ_UINT32_LE (data + 9);
   fstr = g_strdup_printf ("%" GST_FOURCC_FORMAT, GST_FOURCC_ARGS (fourcc));
   GST_DEBUG ("fourcc: %s", fstr);
@@ -1601,10 +1651,6 @@ setup_ogmaudio_mapper (GstOggStream * pad, ogg_packet * packet)
   /* FIXME: Need to do something with the reorder map */
   pad->caps =
       gst_riff_create_audio_caps (fourcc, NULL, NULL, NULL, NULL, NULL, NULL);
-
-  GST_LOG ("sample rate: %d", pad->granulerate_n);
-  if (pad->granulerate_n == 0)
-    return FALSE;
 
   if (pad->caps) {
     gst_caps_set_simple (pad->caps,
@@ -1692,8 +1738,11 @@ setup_ogmtext_mapper (GstOggStream * pad, ogg_packet * packet)
       pad->granulerate_n, pad->granulerate_d,
       (double) pad->granulerate_n / pad->granulerate_d);
 
-  if (pad->granulerate_d <= 0)
+  if (pad->granulerate_d <= 0) {
+    pad->granulerate_n = 0;
+    pad->granulerate_d = 0;
     return FALSE;
+  }
 
   pad->caps = gst_caps_new_simple ("text/x-raw", "format", G_TYPE_STRING,
       "utf8", NULL);
@@ -1738,14 +1787,14 @@ setup_pcm_mapper (GstOggStream * pad, ogg_packet * packet)
   pad->granulerate_d = 1;
   GST_LOG ("sample rate: %d", pad->granulerate_n);
 
+  if (pad->granulerate_n == 0) {
+    pad->granulerate_n = 0;
+    pad->granulerate_d = 0;
+    return FALSE;
+  }
+
   format = GST_READ_UINT32_LE (data + 12);
   channels = GST_READ_UINT8 (data + 21);
-
-  pad->n_header_packets = 2 + GST_READ_UINT32_LE (data + 24);
-
-  if (pad->granulerate_n == 0)
-    return FALSE;
-
   switch (format) {
     case OGGPCM_FMT_S8:
       caps = gst_caps_new_simple ("audio/x-raw",
@@ -1802,8 +1851,12 @@ setup_pcm_mapper (GstOggStream * pad, ogg_packet * packet)
           "format", G_TYPE_STRING, "F64BE", NULL);
       break;
     default:
+      pad->granulerate_n = 0;
+      pad->granulerate_d = 0;
       return FALSE;
   }
+
+  pad->n_header_packets = 2 + GST_READ_UINT32_LE (data + 24);
 
   gst_caps_set_simple (caps,
       "layout", G_TYPE_STRING, "interleaved",
@@ -1824,12 +1877,25 @@ setup_cmml_mapper (GstOggStream * pad, ogg_packet * packet)
   pad->granulerate_n = GST_READ_UINT64_LE (data + 12);
   pad->granulerate_d = GST_READ_UINT64_LE (data + 20);
   pad->granuleshift = data[28];
+
+  if (pad->granuleshift >= 63) {
+    /* Granuleshift can't be greater than the storage size of a granule */
+    GST_WARNING ("Invalid granuleshift (%u >= 63)", pad->granuleshift);
+    pad->granulerate_n = 0;
+    pad->granulerate_d = 0;
+    pad->granuleshift = -1;
+    return FALSE;
+  }
   GST_LOG ("sample rate: %d", pad->granulerate_n);
 
-  pad->n_header_packets = 3;
-
-  if (pad->granulerate_n == 0)
+  if (pad->granulerate_n == 0) {
+    pad->granulerate_n = 0;
+    pad->granulerate_d = 0;
+    pad->granuleshift = -1;
     return FALSE;
+  }
+
+  pad->n_header_packets = 3;
 
   data += 4 + (4 + 4 + 4);
   GST_DEBUG ("blocksize0: %u", 1 << (data[0] >> 4));
@@ -1858,8 +1924,12 @@ setup_celt_mapper (GstOggStream * pad, ogg_packet * packet)
   pad->frame_size = GST_READ_UINT32_LE (packet->packet + 44);
   pad->n_header_packets = GST_READ_UINT32_LE (packet->packet + 56) + 2;
 
-  if (pad->granulerate_n == 0)
+  if (pad->granulerate_n == 0) {
+    pad->granulerate_n = 0;
+    pad->granulerate_d = 0;
+    pad->granuleshift = -1;
     return FALSE;
+  }
 
   pad->caps = gst_caps_new_simple ("audio/x-celt",
       "rate", G_TYPE_INT, pad->granulerate_n, NULL);
@@ -1881,13 +1951,25 @@ setup_kate_mapper (GstOggStream * pad, ogg_packet * packet)
   pad->granulerate_n = GST_READ_UINT32_LE (data + 24);
   pad->granulerate_d = GST_READ_UINT32_LE (data + 28);
   pad->granuleshift = GST_READ_UINT8 (data + 15);
+  if (pad->granuleshift >= 63) {
+    /* Granuleshift can't be greater than the storage size of a granule */
+    GST_WARNING ("Invalid granuleshift (%u >= 63)", pad->granuleshift);
+    pad->granulerate_n = 0;
+    pad->granulerate_d = 0;
+    pad->granuleshift = -1;
+    return FALSE;
+  }
   GST_LOG ("sample rate: %d", pad->granulerate_n);
+
+  if (pad->granulerate_n == 0) {
+    pad->granulerate_n = 0;
+    pad->granulerate_d = 0;
+    pad->granuleshift = -1;
+    return FALSE;
+  }
 
   pad->n_header_packets = GST_READ_UINT8 (data + 11);
   GST_LOG ("kate header packets: %d", pad->n_header_packets);
-
-  if (pad->granulerate_n == 0)
-    return FALSE;
 
   category = (const char *) data + 48;
   if (strcmp (category, "subtitles") == 0 || strcmp (category, "SUB") == 0 ||
@@ -2030,19 +2112,8 @@ granulepos_to_granule_opus (GstOggStream * pad, gint64 granulepos)
   if (granulepos == -1)
     return -1;
 
-  /* We must reject some particular cases for the first granpos */
-
   if (pad->first_granpos < 0 || granulepos < pad->first_granpos)
     pad->first_granpos = granulepos;
-
-  if (pad->first_granpos == granulepos) {
-    if (granulepos < -pad->granule_offset) {
-      GST_ERROR ("Invalid Opus stream: first granulepos (%" G_GINT64_FORMAT
-          ") less than preskip (%" G_GINT64_FORMAT ")", granulepos,
-          -pad->granule_offset);
-      return -1;
-    }
-  }
 
   return granulepos;
 }
@@ -2113,6 +2184,9 @@ extract_tags_opus (GstOggStream * pad, ogg_packet * packet)
     tag_list_from_vorbiscomment_packet (packet,
         (const guint8 *) "OpusTags", 8, &pad->taglist);
 
+    if (!pad->taglist)
+      pad->taglist = gst_tag_list_new_empty ();
+
     gst_tag_list_add (pad->taglist, GST_TAG_MERGE_REPLACE,
         GST_TAG_AUDIO_CODEC, "Opus", NULL);
   }
@@ -2149,16 +2223,27 @@ setup_daala_mapper (GstOggStream * pad, ogg_packet * packet)
       h);
 
   pad->granuleshift = GST_READ_UINT8 (data + 37);
+  if (pad->granuleshift >= 63) {
+    /* Granuleshift can't be greater than the storage size of a granule */
+    GST_WARNING ("Invalid granuleshift (%u >= 63)", pad->granuleshift);
+    pad->granulerate_n = 0;
+    pad->granulerate_d = 0;
+    pad->granuleshift = -1;
+    return FALSE;
+  }
   GST_LOG ("granshift: %d", pad->granuleshift);
+
+  if (pad->granulerate_n == 0 || pad->granulerate_d == 0) {
+    GST_WARNING ("frame rate %d/%d", pad->granulerate_n, pad->granulerate_d);
+    pad->granulerate_n = 0;
+    pad->granulerate_d = 0;
+    pad->granuleshift = -1;
+    return FALSE;
+  }
 
   pad->is_video = TRUE;
   pad->n_header_packets = 3;
   pad->frame_size = 1;
-
-  if (pad->granulerate_n == 0 || pad->granulerate_d == 0) {
-    GST_WARNING ("frame rate %d/%d", pad->granulerate_n, pad->granulerate_d);
-    return FALSE;
-  }
 
   pad->caps = gst_caps_new_empty_simple ("video/x-daala");
 
@@ -2184,7 +2269,7 @@ granulepos_to_granule_daala (GstOggStream * pad, gint64 granulepos)
 {
   gint64 keyindex, keyoffset;
 
-  if (pad->granuleshift != 0) {
+  if (pad->granuleshift != 0 && pad->granuleshift != G_MAXUINT32) {
     keyindex = granulepos >> pad->granuleshift;
     keyoffset = granulepos - (keyindex << pad->granuleshift);
     return keyindex + keyoffset;
@@ -2198,7 +2283,7 @@ is_granulepos_keyframe_daala (GstOggStream * pad, gint64 granulepos)
 {
   gint64 frame_mask;
 
-  if (granulepos == (gint64) - 1)
+  if (granulepos == (gint64) - 1 || pad->granuleshift == G_MAXUINT32)
     return FALSE;
 
   frame_mask = (G_GUINT64_CONSTANT (1) << pad->granuleshift) - 1;
@@ -2242,6 +2327,23 @@ extract_tags_daala (GstOggStream * pad, ogg_packet * packet)
 /* *INDENT-OFF* */
 /* indent hates our freedoms */
 const GstOggMap mappers[] = {
+  {
+    /* Empty mapper for uninitialized pads/streams */
+    NULL, 0, G_MAXINT32,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL
+  },
   {
     "\200theora", 7, 42,
     "video/x-theora",

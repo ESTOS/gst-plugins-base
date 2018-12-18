@@ -55,7 +55,10 @@ typedef enum {
   GST_VIDEO_INTERLACE_MODE_FIELDS
 } GstVideoInterlaceMode;
 
+GST_VIDEO_API
 const gchar *          gst_video_interlace_mode_to_string    (GstVideoInterlaceMode mode);
+
+GST_VIDEO_API
 GstVideoInterlaceMode  gst_video_interlace_mode_from_string  (const gchar * mode);
 
 /**
@@ -228,6 +231,32 @@ typedef enum {
 } GstVideoFlags;
 
 /**
+ * GstVideoFieldOrder:
+ * @GST_VIDEO_FIELD_ORDER_UNKNOWN: unknown field order for interlaced content.
+ *     The actual field order is signalled via buffer flags.
+ * @GST_VIDEO_FIELD_ORDER_TOP_FIELD_FIRST: top field is first
+ * @GST_VIDEO_FIELD_ORDER_BOTTOM_FIELD_FIRST: bottom field is first
+ *
+ * Field order of interlaced content. This is only valid for
+ * interlace-mode=interleaved and not interlace-mode=mixed. In the case of
+ * mixed or GST_VIDEO_FIELD_ORDER_UNKOWN, the field order is signalled via
+ * buffer flags.
+ *
+ * Since: 1.12
+ */
+typedef enum {
+  GST_VIDEO_FIELD_ORDER_UNKNOWN            = 0,
+  GST_VIDEO_FIELD_ORDER_TOP_FIELD_FIRST    = 1,
+  GST_VIDEO_FIELD_ORDER_BOTTOM_FIELD_FIRST = 2,
+} GstVideoFieldOrder;
+
+GST_VIDEO_API
+const gchar *      gst_video_field_order_to_string    (GstVideoFieldOrder order);
+
+GST_VIDEO_API
+GstVideoFieldOrder gst_video_field_order_from_string  (const gchar * order);
+
+/**
  * GstVideoInfo:
  * @finfo: the format info of the video
  * @interlace_mode: the interlace mode
@@ -281,6 +310,7 @@ struct _GstVideoInfo {
     struct {
       GstVideoMultiviewMode     multiview_mode;
       GstVideoMultiviewFlags    multiview_flags;
+      GstVideoFieldOrder        field_order;
     } abi;
     /*< private >*/
     gpointer _gst_reserved[GST_PADDING];
@@ -288,6 +318,7 @@ struct _GstVideoInfo {
 };
 
 #define GST_TYPE_VIDEO_INFO              (gst_video_info_get_type ())
+GST_VIDEO_API
 GType gst_video_info_get_type            (void);
 
 /* general info */
@@ -300,6 +331,7 @@ GType gst_video_info_get_type            (void);
 
 #define GST_VIDEO_INFO_INTERLACE_MODE(i) ((i)->interlace_mode)
 #define GST_VIDEO_INFO_IS_INTERLACED(i)  ((i)->interlace_mode != GST_VIDEO_INTERLACE_MODE_PROGRESSIVE)
+#define GST_VIDEO_INFO_FIELD_ORDER(i)    ((i)->ABI.abi.field_order)
 #define GST_VIDEO_INFO_FLAGS(i)          ((i)->flags)
 #define GST_VIDEO_INFO_WIDTH(i)          ((i)->width)
 #define GST_VIDEO_INFO_HEIGHT(i)         ((i)->height)
@@ -338,29 +370,43 @@ GType gst_video_info_get_type            (void);
 #define GST_VIDEO_INFO_COMP_PSTRIDE(i,c) GST_VIDEO_FORMAT_INFO_PSTRIDE((i)->finfo,(c))
 #define GST_VIDEO_INFO_COMP_POFFSET(i,c) GST_VIDEO_FORMAT_INFO_POFFSET((i)->finfo,(c))
 
+GST_VIDEO_API
 GstVideoInfo * gst_video_info_new         (void);
+
+GST_VIDEO_API
 void           gst_video_info_init        (GstVideoInfo *info);
+
+GST_VIDEO_API
 GstVideoInfo * gst_video_info_copy        (const GstVideoInfo *info);
+
+GST_VIDEO_API
 void           gst_video_info_free        (GstVideoInfo *info);
 
-void           gst_video_info_set_format  (GstVideoInfo *info, GstVideoFormat format,
+GST_VIDEO_API
+gboolean       gst_video_info_set_format  (GstVideoInfo *info, GstVideoFormat format,
                                            guint width, guint height);
 
+GST_VIDEO_API
 gboolean       gst_video_info_from_caps   (GstVideoInfo *info, const GstCaps  * caps);
 
+GST_VIDEO_API
 GstCaps *      gst_video_info_to_caps     (GstVideoInfo *info);
 
+GST_VIDEO_API
 gboolean       gst_video_info_convert     (GstVideoInfo *info,
                                            GstFormat     src_format,
                                            gint64        src_value,
                                            GstFormat     dest_format,
                                            gint64       *dest_value);
+
+GST_VIDEO_API
 gboolean       gst_video_info_is_equal    (const GstVideoInfo *info,
                                            const GstVideoInfo *other);
 
 #include <gst/video/video.h>
 
-void           gst_video_info_align       (GstVideoInfo * info, GstVideoAlignment * align);
+GST_VIDEO_API
+gboolean       gst_video_info_align       (GstVideoInfo * info, GstVideoAlignment * align);
 
 
 #ifdef G_DEFINE_AUTOPTR_CLEANUP_FUNC

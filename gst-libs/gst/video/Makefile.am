@@ -8,6 +8,8 @@ glib_enum_headers = video.h video-format.h video-color.h video-info.h video-dith
 glib_enum_define = GST_VIDEO
 glib_gen_prefix = gst_video
 glib_gen_basename = video
+glib_gen_decl_banner=GST_VIDEO_API
+glib_gen_decl_include=\#include <gst/video/video-prelude.h>
 
 built_sources = video-enumtypes.c
 built_headers = video-enumtypes.h
@@ -38,6 +40,7 @@ libgstvideo_@GST_API_VERSION@_la_SOURCES = \
 	gstvideoaffinetransformationmeta.c \
 	gstvideometa.c   	\
 	gstvideopool.c		\
+	videodirection.c	\
 	videoorientation.c	\
 	videooverlay.c          \
 	gstvideodecoder.c       \
@@ -47,7 +50,8 @@ libgstvideo_@GST_API_VERSION@_la_SOURCES = \
 	video-resampler.c	\
 	video-blend.c		\
 	video-overlay-composition.c \
-	video-multiview.c
+	video-multiview.c	\
+	gstvideotimecode.c
 
 nodist_libgstvideo_@GST_API_VERSION@_la_SOURCES = $(BUILT_SOURCES)
 
@@ -57,6 +61,7 @@ libgstvideo_@GST_API_VERSION@include_HEADERS = \
 	colorbalancechannel.h	\
 	navigation.h            \
 	video.h			\
+	video-prelude.h		\
 	video-event.h          	\
 	video-format.h         	\
 	video-chroma.h         	\
@@ -72,6 +77,7 @@ libgstvideo_@GST_API_VERSION@include_HEADERS = \
 	gstvideometa.h		\
 	gstvideoaffinetransformationmeta.h \
 	gstvideopool.h		\
+	videodirection.h 	\
 	videoorientation.h 	\
 	videooverlay.h          \
 	gstvideodecoder.h       \
@@ -80,7 +86,8 @@ libgstvideo_@GST_API_VERSION@include_HEADERS = \
 	video-resampler.h	\
 	video-blend.h		\
 	video-overlay-composition.h \
-	video-multiview.h
+	video-multiview.h	\
+	gstvideotimecode.h
 
 nodist_libgstvideo_@GST_API_VERSION@include_HEADERS = $(built_headers)
 noinst_HEADERS = gstvideoutilsprivate.h
@@ -102,7 +109,8 @@ gir_sources+=$(patsubst %,$(builddir)/%, $(built_sources))
 
 GstVideo-@GST_API_VERSION@.gir: $(INTROSPECTION_SCANNER) libgstvideo-@GST_API_VERSION@.la
 	$(AM_V_GEN)PKG_CONFIG_PATH="$(GST_PKG_CONFIG_PATH)" GI_SCANNER_DISABLE_CACHE=yes\
-		GST_PLUGIN_SYSTEM_PATH_1_0="" GST_PLUGIN_PATH_1_0="" GST_REGISTRY_UPDATE=no \
+		GST_PLUGIN_SYSTEM_PATH_1_0="" GST_PLUGIN_PATH_1_0="" GST_REGISTRY_DISABLE=yes \
+		CPPFLAGS="$(CPPFLAGS)" CFLAGS="$(CFLAGS)" LDFLAGS="$(LDFLAGS)" CC="$(CC)" PKG_CONFIG="$(PKG_CONFIG)" DLLTOOL="$(DLLTOOL)" \
 		$(INTROSPECTION_SCANNER) -v --namespace GstVideo \
 		--nsversion=@GST_API_VERSION@ \
 		--identifier-prefix=Gst \

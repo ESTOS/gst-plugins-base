@@ -25,16 +25,17 @@
 
 /**
  * SECTION:element-opusenc
+ * @title: opusenc
  * @see_also: opusdec, oggmux
  *
  * This element encodes raw audio to OPUS.
  *
- * <refsect2>
- * <title>Example pipelines</title>
+ * ## Example pipelines
  * |[
  * gst-launch-1.0 -v audiotestsrc wave=sine num-buffers=100 ! audioconvert ! opusenc ! oggmux ! filesink location=sine.ogg
- * ]| Encode a test sine signal to Ogg/OPUS.
- * </refsect2>
+ * ]|
+ * Encode a test sine signal to Ogg/OPUS.
+ *
  */
 
 #ifdef HAVE_CONFIG_H
@@ -271,10 +272,8 @@ gst_opus_enc_class_init (GstOpusEncClass * klass)
   gobject_class->set_property = gst_opus_enc_set_property;
   gobject_class->get_property = gst_opus_enc_get_property;
 
-  gst_element_class_add_pad_template (gstelement_class,
-      gst_static_pad_template_get (&src_factory));
-  gst_element_class_add_pad_template (gstelement_class,
-      gst_static_pad_template_get (&sink_factory));
+  gst_element_class_add_static_pad_template (gstelement_class, &src_factory);
+  gst_element_class_add_static_pad_template (gstelement_class, &sink_factory);
   gst_element_class_set_static_metadata (gstelement_class, "Opus audio encoder",
       "Codec/Encoder/Audio",
       "Encodes audio in Opus format",
@@ -369,6 +368,7 @@ gst_opus_enc_init (GstOpusEnc * enc)
   enc->n_channels = -1;
   enc->sample_rate = -1;
   enc->frame_samples = 0;
+  enc->unpositioned = FALSE;
 
   enc->bitrate = DEFAULT_BITRATE;
   enc->bandwidth = DEFAULT_BANDWIDTH;
@@ -518,7 +518,7 @@ gst_opus_enc_setup_channel_mappings (GstOpusEnc * enc,
   gst_opus_enc_setup_trivial_mapping (enc, enc->decoding_channel_mapping);
 
   /* For one channel, use the basic RTP mapping */
-  if (enc->n_channels == 1) {
+  if (enc->n_channels == 1 && !enc->unpositioned) {
     GST_INFO_OBJECT (enc, "Mono, trivial RTP mapping");
     enc->channel_mapping_family = 0;
     /* implicit mapping for family 0 */
@@ -527,7 +527,7 @@ gst_opus_enc_setup_channel_mappings (GstOpusEnc * enc,
 
   /* For two channels, use the basic RTP mapping if the channels are
      mapped as left/right. */
-  if (enc->n_channels == 2) {
+  if (enc->n_channels == 2 && !enc->unpositioned) {
     GST_INFO_OBJECT (enc, "Stereo, trivial RTP mapping");
     enc->channel_mapping_family = 0;
     enc->n_stereo_streams = 1;
@@ -541,7 +541,7 @@ gst_opus_enc_setup_channel_mappings (GstOpusEnc * enc,
      One maps the input channels to an ordering which has the natural pairs
      first so they can benefit from the Opus stereo channel coupling, and the
      other maps this ordering to the Vorbis ordering. */
-  if (enc->n_channels >= 3 && enc->n_channels <= 8) {
+  if (enc->n_channels >= 3 && enc->n_channels <= 8 && !enc->unpositioned) {
     int c0, c1, c0v, c1v;
     int mapped;
     gboolean positions_done[256];
@@ -639,7 +639,11 @@ gst_opus_enc_setup_channel_mappings (GstOpusEnc * enc,
 
   /* For other cases, we use undefined, with the default trivial mapping
      and all mono streams */
-  GST_WARNING_OBJECT (enc, "Unknown mapping");
+  if (!enc->unpositioned)
+    GST_WARNING_OBJECT (enc, "Unknown mapping");
+  else
+    GST_INFO_OBJECT (enc, "Unpositioned mapping, all channels mono");
+
   enc->channel_mapping_family = 255;
   enc->n_stereo_streams = 0;
 
@@ -656,6 +660,7 @@ gst_opus_enc_set_format (GstAudioEncoder * benc, GstAudioInfo * info)
   g_mutex_lock (&enc->property_lock);
 
   enc->n_channels = GST_AUDIO_INFO_CHANNELS (info);
+  enc->unpositioned = GST_AUDIO_INFO_IS_UNPOSITIONED (info);
   enc->sample_rate = GST_AUDIO_INFO_RATE (info);
   gst_opus_enc_setup_channel_mappings (enc, info);
   GST_DEBUG_OBJECT (benc, "Setup with %d channels, %d Hz", enc->n_channels,
@@ -814,6 +819,9 @@ gst_opus_enc_get_sink_template_caps (void)
 
     caps = gst_caps_new_empty ();
 
+    /* The caps is cached */
+    GST_MINI_OBJECT_FLAG_SET (caps, GST_MINI_OBJECT_FLAG_MAY_BE_LEAKED);
+
     /* Generate our two template structures */
     g_value_init (&rate_array, GST_TYPE_LIST);
     g_value_init (&v, G_TYPE_INT);
@@ -864,6 +872,18 @@ gst_opus_enc_get_sink_template_caps (void)
       gst_structure_set (s, "channels", G_TYPE_INT, i, "channel-mask",
           GST_TYPE_BITMASK, channel_mask, NULL);
       gst_caps_append_structure (caps, s);
+
+      /* We also allow unpositioned channels, input will be
+       * treated as a set of individual mono channels */
+      s = gst_structure_copy (s2);
+      gst_structure_set (s, "channels", G_TYPE_INT, i, "channel-mask",
+          GST_TYPE_BITMASK, G_GUINT64_CONSTANT (0), NULL);
+      gst_caps_append_structure (caps, s);
+
+      s = gst_structure_copy (s1);
+      gst_structure_set (s, "channels", G_TYPE_INT, i, "channel-mask",
+          GST_TYPE_BITMASK, G_GUINT64_CONSTANT (0), NULL);
+      gst_caps_append_structure (caps, s);
     }
 
     gst_structure_free (s1);
@@ -904,8 +924,6 @@ gst_opus_enc_encode (GstOpusEnc * enc, GstBuffer * buf)
   GstMapInfo omap;
   gint outsize;
   GstBuffer *outbuf;
-  GstSegment *segment;
-  GstClockTime duration;
   guint64 trim_start = 0, trim_end = 0;
 
   guint max_payload_size;
@@ -930,26 +948,7 @@ gst_opus_enc_encode (GstOpusEnc * enc, GstBuffer * buf)
       GST_DEBUG_OBJECT (enc, "draining; adding silence samples");
       g_assert (bsize < bytes);
 
-      /* If encoding part of a frame, and we have no set stop time on
-       * the output segment, we update the segment stop time to reflect
-       * the last sample. This will let oggmux set the last page's
-       * granpos to tell a decoder the dummy samples should be clipped.
-       */
       input_samples = bsize / (enc->n_channels * 2);
-      segment = &GST_AUDIO_ENCODER_OUTPUT_SEGMENT (enc);
-      if (!GST_CLOCK_TIME_IS_VALID (segment->stop)) {
-        GST_DEBUG_OBJECT (enc,
-            "No stop time and partial frame, updating segment");
-        duration =
-            gst_util_uint64_scale_ceil (enc->consumed_samples + input_samples,
-            GST_SECOND, enc->sample_rate);
-        segment->stop = segment->start + duration;
-        GST_DEBUG_OBJECT (enc, "new output segment %" GST_SEGMENT_FORMAT,
-            segment);
-        gst_pad_push_event (GST_AUDIO_ENCODER_SRC_PAD (enc),
-            gst_event_new_segment (segment));
-      }
-
       diff =
           (enc->encoded_samples + frame_samples) - (enc->consumed_samples +
           input_samples);
@@ -1046,13 +1045,14 @@ gst_opus_enc_encode (GstOpusEnc * enc, GstBuffer * buf)
   gst_buffer_unmap (outbuf, &omap);
 
   if (outsize < 0) {
-    GST_ERROR_OBJECT (enc, "Encoding failed: %d", outsize);
+    GST_ELEMENT_ERROR (enc, STREAM, ENCODE, (NULL),
+        ("Encoding failed (%d): %s", outsize, opus_strerror (outsize)));
     ret = GST_FLOW_ERROR;
     goto done;
   } else if (outsize > max_payload_size) {
-    GST_WARNING_OBJECT (enc,
-        "Encoded size %d is higher than max payload size (%d bytes)",
-        outsize, max_payload_size);
+    GST_ELEMENT_ERROR (enc, STREAM, ENCODE, (NULL),
+        ("Encoded size %d is higher than max payload size (%d bytes)",
+            outsize, max_payload_size));
     ret = GST_FLOW_ERROR;
     goto done;
   }

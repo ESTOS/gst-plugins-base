@@ -23,6 +23,7 @@
 
 /**
  * SECTION:gstaudiodecoder
+ * @title: GstAudioDecoder
  * @short_description: Base class for audio decoders
  * @see_also: #GstBaseTransform
  *
@@ -30,72 +31,48 @@
  * raw audio samples.
  *
  * GstAudioDecoder and subclass should cooperate as follows.
- * <orderedlist>
- * <listitem>
- *   <itemizedlist><title>Configuration</title>
- *   <listitem><para>
- *     Initially, GstAudioDecoder calls @start when the decoder element
+ *
+ * ## Configuration
+ *
+ *   * Initially, GstAudioDecoder calls @start when the decoder element
  *     is activated, which allows subclass to perform any global setup.
  *     Base class (context) parameters can already be set according to subclass
  *     capabilities (or possibly upon receive more information in subsequent
  *     @set_format).
- *   </para></listitem>
- *   <listitem><para>
- *     GstAudioDecoder calls @set_format to inform subclass of the format
+ *   * GstAudioDecoder calls @set_format to inform subclass of the format
  *     of input audio data that it is about to receive.
  *     While unlikely, it might be called more than once, if changing input
  *     parameters require reconfiguration.
- *   </para></listitem>
- *   <listitem><para>
- *     GstAudioDecoder calls @stop at end of all processing.
- *   </para></listitem>
- *   </itemizedlist>
- * </listitem>
+ *   * GstAudioDecoder calls @stop at end of all processing.
+ *
  * As of configuration stage, and throughout processing, GstAudioDecoder
  * provides various (context) parameters, e.g. describing the format of
  * output audio data (valid when output caps have been set) or current parsing state.
  * Conversely, subclass can and should configure context to inform
  * base class of its expectation w.r.t. buffer handling.
- * <listitem>
- *   <itemizedlist>
- *   <title>Data processing</title>
- *     <listitem><para>
- *       Base class gathers input data, and optionally allows subclass
+ *
+ * ## Data processing
+ *     * Base class gathers input data, and optionally allows subclass
  *       to parse this into subsequently manageable (as defined by subclass)
  *       chunks.  Such chunks are subsequently referred to as 'frames',
  *       though they may or may not correspond to 1 (or more) audio format frame.
- *     </para></listitem>
- *     <listitem><para>
- *       Input frame is provided to subclass' @handle_frame.
- *     </para></listitem>
- *     <listitem><para>
- *       If codec processing results in decoded data, subclass should call
+ *     * Input frame is provided to subclass' @handle_frame.
+ *     * If codec processing results in decoded data, subclass should call
  *       @gst_audio_decoder_finish_frame to have decoded data pushed
  *       downstream.
- *     </para></listitem>
- *     <listitem><para>
- *       Just prior to actually pushing a buffer downstream,
+ *     * Just prior to actually pushing a buffer downstream,
  *       it is passed to @pre_push.  Subclass should either use this callback
  *       to arrange for additional downstream pushing or otherwise ensure such
  *       custom pushing occurs after at least a method call has finished since
  *       setting src pad caps.
- *     </para></listitem>
- *     <listitem><para>
- *       During the parsing process GstAudioDecoderClass will handle both
+ *     * During the parsing process GstAudioDecoderClass will handle both
  *       srcpad and sinkpad events. Sink events will be passed to subclass
  *       if @event callback has been provided.
- *     </para></listitem>
- *   </itemizedlist>
- * </listitem>
- * <listitem>
- *   <itemizedlist><title>Shutdown phase</title>
- *   <listitem><para>
- *     GstAudioDecoder class calls @stop to inform the subclass that data
+ *
+ * ## Shutdown phase
+ *
+ *   * GstAudioDecoder class calls @stop to inform the subclass that data
  *     parsing will be stopped.
- *   </para></listitem>
- *   </itemizedlist>
- * </listitem>
- * </orderedlist>
  *
  * Subclass is responsible for providing pad template caps for
  * source and sink pads. The pads need to be named "sink" and "src". It also
@@ -125,23 +102,18 @@
  * bitrates.
  *
  * Things that subclass need to take care of:
- * <itemizedlist>
- *   <listitem><para>Provide pad templates</para></listitem>
- *   <listitem><para>
- *      Set source pad caps when appropriate
- *   </para></listitem>
- *   <listitem><para>
- *      Set user-configurable properties to sane defaults for format and
+ *
+ *   * Provide pad templates
+ *   * Set source pad caps when appropriate
+ *   * Set user-configurable properties to sane defaults for format and
  *      implementing codec at hand, and convey some subclass capabilities and
  *      expectations in context.
- *   </para></listitem>
- *   <listitem><para>
- *      Accept data in @handle_frame and provide encoded results to
+ *
+ *   * Accept data in @handle_frame and provide encoded results to
  *      @gst_audio_decoder_finish_frame.  If it is prepared to perform
  *      PLC, it should also accept NULL data in @handle_frame and provide for
  *      data for indicated duration.
- *   </para></listitem>
- * </itemizedlist>
+ *
  */
 
 #ifdef HAVE_CONFIG_H
@@ -203,6 +175,7 @@ typedef struct _GstAudioDecoderContext
   gboolean do_plc;
   gboolean do_estimate_rate;
   gint max_errors;
+  GstCaps *allocation_caps;
   /* MT-protected (with LOCK) */
   GstClockTime min_latency;
   GstClockTime max_latency;
@@ -241,6 +214,8 @@ struct _GstAudioDecoderPrivate
   gboolean force;
   /* input_segment are output_segment identical */
   gboolean in_out_segment_sync;
+  /* expecting the buffer with DISCONT flag */
+  gboolean expecting_discont_buf;
 
 
   /* input bps estimatation */
@@ -496,8 +471,10 @@ gst_audio_decoder_reset (GstAudioDecoder * dec, gboolean full)
 
   if (full) {
     dec->priv->active = FALSE;
+    GST_OBJECT_LOCK (dec);
     dec->priv->bytes_in = 0;
     dec->priv->samples_out = 0;
+    GST_OBJECT_UNLOCK (dec);
     dec->priv->agg = -1;
     dec->priv->error_count = 0;
     gst_audio_decoder_clear_queues (dec);
@@ -524,11 +501,14 @@ gst_audio_decoder_reset (GstAudioDecoder * dec, gboolean full)
     if (dec->priv->ctx.allocator)
       gst_object_unref (dec->priv->ctx.allocator);
 
+    GST_OBJECT_LOCK (dec);
     gst_caps_replace (&dec->priv->ctx.input_caps, NULL);
+    gst_caps_replace (&dec->priv->ctx.allocation_caps, NULL);
 
     memset (&dec->priv->ctx, 0, sizeof (dec->priv->ctx));
 
     gst_audio_info_init (&dec->priv->ctx.info);
+    GST_OBJECT_UNLOCK (dec);
     dec->priv->ctx.max_errors = GST_AUDIO_DECODER_MAX_ERRORS;
     dec->priv->ctx.had_output_data = FALSE;
     dec->priv->ctx.had_input_data = FALSE;
@@ -639,6 +619,8 @@ gst_audio_decoder_negotiate_default (GstAudioDecoder * dec)
   klass = GST_AUDIO_DECODER_GET_CLASS (dec);
 
   caps = gst_audio_info_to_caps (&dec->priv->ctx.info);
+  if (dec->priv->ctx.allocation_caps == NULL)
+    dec->priv->ctx.allocation_caps = gst_caps_ref (caps);
 
   GST_DEBUG_OBJECT (dec, "setting src caps %" GST_PTR_FORMAT, caps);
 
@@ -673,7 +655,7 @@ gst_audio_decoder_negotiate_default (GstAudioDecoder * dec)
     goto done;
   dec->priv->ctx.output_format_changed = FALSE;
 
-  query = gst_query_new_allocation (caps, TRUE);
+  query = gst_query_new_allocation (dec->priv->ctx.allocation_caps, TRUE);
   if (!gst_pad_peer_query (dec->srcpad, query)) {
     GST_DEBUG_OBJECT (dec, "didn't get downstream ALLOCATION hints");
   }
@@ -737,7 +719,7 @@ gst_audio_decoder_negotiate_unlocked (GstAudioDecoder * dec)
  * Unmark GST_PAD_FLAG_NEED_RECONFIGURE in any case. But mark it again if
  * negotiate fails.
  *
- * Returns: #TRUE if the negotiation succeeded, else #FALSE.
+ * Returns: %TRUE if the negotiation succeeded, else %FALSE.
  */
 gboolean
 gst_audio_decoder_negotiate (GstAudioDecoder * dec)
@@ -811,7 +793,9 @@ gst_audio_decoder_set_output_format (GstAudioDecoder * dec,
   }
 
   /* copy the GstAudioInfo */
+  GST_OBJECT_LOCK (dec);
   dec->priv->ctx.info = *info;
+  GST_OBJECT_UNLOCK (dec);
   dec->priv->ctx.output_format_changed = TRUE;
 
 done:
@@ -1182,7 +1166,7 @@ foreach_metadata (GstBuffer * inbuf, GstMeta ** meta, gpointer user_data)
 
   /* we only copy metadata when the subclass implemented a transform_meta
    * function and when it returns %TRUE */
-  if (do_copy) {
+  if (do_copy && info->transform_func) {
     GstMetaTransformCopy copy_data = { FALSE, 0, -1 };
     GST_DEBUG_OBJECT (decoder, "copy metadata %s", g_type_name (info->api));
     /* simply copy then */
@@ -1247,8 +1231,10 @@ gst_audio_decoder_finish_frame (GstAudioDecoder * dec, GstBuffer * buf,
 
   if (buf) {
     ret = check_pending_reconfigure (dec);
-    if (ret == GST_FLOW_FLUSHING || ret == GST_FLOW_NOT_NEGOTIATED)
+    if (ret == GST_FLOW_FLUSHING || ret == GST_FLOW_NOT_NEGOTIATED) {
+      gst_buffer_unref (buf);
       goto exit;
+    }
 
     if (priv->pending_events)
       send_pending_events (dec);
@@ -1382,8 +1368,10 @@ gst_audio_decoder_finish_frame (GstAudioDecoder * dec, GstBuffer * buf,
     }
   }
 
+  GST_OBJECT_LOCK (dec);
   priv->samples += samples;
   priv->samples_out += samples;
+  GST_OBJECT_UNLOCK (dec);
 
   /* we got data, so note things are looking up */
   if (G_UNLIKELY (dec->priv->error_count))
@@ -1444,7 +1432,9 @@ gst_audio_decoder_handle_frame (GstAudioDecoder * dec,
         GST_TIME_ARGS (GST_BUFFER_TIMESTAMP (buffer)));
     g_queue_push_tail (&dec->priv->frames, buffer);
     dec->priv->ctx.delay = dec->priv->frames.length;
+    GST_OBJECT_LOCK (dec);
     dec->priv->bytes_in += size;
+    GST_OBJECT_UNLOCK (dec);
   } else {
     GST_LOG_OBJECT (dec, "providing subclass with NULL frame");
   }
@@ -1883,9 +1873,6 @@ gst_audio_decoder_chain (GstPad * pad, GstObject * parent, GstBuffer * buffer)
 
   dec = GST_AUDIO_DECODER (parent);
 
-  if (G_UNLIKELY (!gst_pad_has_current_caps (pad) && dec->priv->needs_format))
-    goto not_negotiated;
-
   GST_LOG_OBJECT (dec,
       "received buffer of size %" G_GSIZE_FORMAT " with ts %" GST_TIME_FORMAT
       ", duration %" GST_TIME_FORMAT, gst_buffer_get_size (buffer),
@@ -1894,9 +1881,13 @@ gst_audio_decoder_chain (GstPad * pad, GstObject * parent, GstBuffer * buffer)
 
   GST_AUDIO_DECODER_STREAM_LOCK (dec);
 
+  if (G_UNLIKELY (dec->priv->ctx.input_caps == NULL && dec->priv->needs_format))
+    goto not_negotiated;
+
   dec->priv->ctx.had_input_data = TRUE;
 
-  if (GST_BUFFER_FLAG_IS_SET (buffer, GST_BUFFER_FLAG_DISCONT)) {
+  if (!dec->priv->expecting_discont_buf &&
+      GST_BUFFER_FLAG_IS_SET (buffer, GST_BUFFER_FLAG_DISCONT)) {
     gint64 samples, ts;
 
     /* track present position */
@@ -1917,6 +1908,7 @@ gst_audio_decoder_chain (GstPad * pad, GstObject * parent, GstBuffer * buffer)
       dec->priv->samples = samples;
     }
   }
+  dec->priv->expecting_discont_buf = FALSE;
 
   if (dec->input_segment.rate > 0.0)
     ret = gst_audio_decoder_chain_forward (dec, buffer);
@@ -1930,6 +1922,7 @@ gst_audio_decoder_chain (GstPad * pad, GstObject * parent, GstBuffer * buffer)
   /* ERRORS */
 not_negotiated:
   {
+    GST_AUDIO_DECODER_STREAM_UNLOCK (dec);
     GST_ELEMENT_ERROR (dec, CORE, NEGOTIATION, (NULL),
         ("decoder not initialized"));
     gst_buffer_unref (buffer);
@@ -1942,8 +1935,14 @@ not_negotiated:
 static inline gboolean
 gst_audio_decoder_do_byte (GstAudioDecoder * dec)
 {
-  return dec->priv->ctx.do_estimate_rate && dec->priv->ctx.info.bpf &&
+  gboolean ret;
+
+  GST_OBJECT_LOCK (dec);
+  ret = dec->priv->ctx.do_estimate_rate && dec->priv->ctx.info.bpf &&
       dec->priv->ctx.info.rate <= dec->priv->samples_out;
+  GST_OBJECT_UNLOCK (dec);
+
+  return ret;
 }
 
 /* Must be called holding the GST_AUDIO_DECODER_STREAM_LOCK */
@@ -1957,6 +1956,7 @@ gst_audio_decoder_negotiate_default_caps (GstAudioDecoder * dec)
   guint64 channel_mask = 0;
   gint caps_size;
   GstStructure *structure;
+  GstAudioInfo info;
 
   templcaps = gst_pad_get_pad_template_caps (dec->srcpad);
   caps = gst_pad_peer_query_caps (dec->srcpad, templcaps);
@@ -2003,10 +2003,18 @@ gst_audio_decoder_negotiate_default_caps (GstAudioDecoder * dec)
 
   for (i = 0; i < caps_size; i++) {
     structure = gst_caps_get_structure (caps, i);
-    gst_structure_fixate_field_nearest_int (structure,
-        "channels", GST_AUDIO_DEF_CHANNELS);
-    gst_structure_fixate_field_nearest_int (structure,
-        "rate", GST_AUDIO_DEF_RATE);
+    if (gst_structure_has_field (structure, "channels"))
+      gst_structure_fixate_field_nearest_int (structure,
+          "channels", GST_AUDIO_DEF_CHANNELS);
+    else
+      gst_structure_set (structure, "channels", G_TYPE_INT,
+          GST_AUDIO_DEF_CHANNELS, NULL);
+    if (gst_structure_has_field (structure, "rate"))
+      gst_structure_fixate_field_nearest_int (structure,
+          "rate", GST_AUDIO_DEF_RATE);
+    else
+      gst_structure_set (structure, "rate", G_TYPE_INT, GST_AUDIO_DEF_RATE,
+          NULL);
   }
   caps = gst_caps_fixate (caps);
   structure = gst_caps_get_structure (caps, 0);
@@ -2024,8 +2032,12 @@ gst_audio_decoder_negotiate_default_caps (GstAudioDecoder * dec)
     }
   }
 
-  if (!caps || !gst_audio_info_from_caps (&dec->priv->ctx.info, caps))
+  if (!caps || !gst_audio_info_from_caps (&info, caps))
     goto caps_error;
+
+  GST_OBJECT_LOCK (dec);
+  dec->priv->ctx.info = info;
+  GST_OBJECT_UNLOCK (dec);
 
   GST_INFO_OBJECT (dec,
       "Chose default caps %" GST_PTR_FORMAT " for initial gap", caps);
@@ -2090,6 +2102,7 @@ gst_audio_decoder_handle_gap (GstAudioDecoder * dec, GstEvent * event)
     /* best effort, not much error handling */
     gst_audio_decoder_handle_frame (dec, klass, buf);
     ret = TRUE;
+    dec->priv->expecting_discont_buf = TRUE;
     gst_event_unref (event);
   } else {
     GstFlowReturn flowret;
@@ -2518,77 +2531,6 @@ gst_audio_decoder_propose_allocation_default (GstAudioDecoder * dec,
   return TRUE;
 }
 
-/*
- * gst_audio_encoded_audio_convert:
- * @fmt: audio format of the encoded audio
- * @bytes: number of encoded bytes
- * @samples: number of encoded samples
- * @src_format: source format
- * @src_value: source value
- * @dest_format: destination format
- * @dest_value: destination format
- *
- * Helper function to convert @src_value in @src_format to @dest_value in
- * @dest_format for encoded audio data.  Conversion is possible between
- * BYTE and TIME format by using estimated bitrate based on
- * @samples and @bytes (and @fmt).
- */
-/* FIXME: make gst_audio_encoded_audio_convert() public? */
-static gboolean
-gst_audio_encoded_audio_convert (GstAudioInfo * fmt,
-    gint64 bytes, gint64 samples, GstFormat src_format,
-    gint64 src_value, GstFormat * dest_format, gint64 * dest_value)
-{
-  gboolean res = FALSE;
-
-  g_return_val_if_fail (dest_format != NULL, FALSE);
-  g_return_val_if_fail (dest_value != NULL, FALSE);
-
-  if (G_UNLIKELY (src_format == *dest_format || src_value == 0 ||
-          src_value == -1)) {
-    if (dest_value)
-      *dest_value = src_value;
-    return TRUE;
-  }
-
-  if (samples == 0 || bytes == 0 || fmt->rate == 0) {
-    GST_DEBUG ("not enough metadata yet to convert");
-    goto exit;
-  }
-
-  bytes *= fmt->rate;
-
-  switch (src_format) {
-    case GST_FORMAT_BYTES:
-      switch (*dest_format) {
-        case GST_FORMAT_TIME:
-          *dest_value = gst_util_uint64_scale (src_value,
-              GST_SECOND * samples, bytes);
-          res = TRUE;
-          break;
-        default:
-          res = FALSE;
-      }
-      break;
-    case GST_FORMAT_TIME:
-      switch (*dest_format) {
-        case GST_FORMAT_BYTES:
-          *dest_value = gst_util_uint64_scale (src_value, bytes,
-              samples * GST_SECOND);
-          res = TRUE;
-          break;
-        default:
-          res = FALSE;
-      }
-      break;
-    default:
-      res = FALSE;
-  }
-
-exit:
-  return res;
-}
-
 /**
  * gst_audio_decoder_proxy_getcaps:
  * @decoder: a #GstAudioDecoder
@@ -2651,9 +2593,12 @@ gst_audio_decoder_sink_query_default (GstAudioDecoder * dec, GstQuery * query)
       gint64 src_val, dest_val;
 
       gst_query_parse_convert (query, &src_fmt, &src_val, &dest_fmt, &dest_val);
-      if (!(res = gst_audio_encoded_audio_convert (&dec->priv->ctx.info,
-                  dec->priv->bytes_in, dec->priv->samples_out,
-                  src_fmt, src_val, &dest_fmt, &dest_val)))
+      GST_OBJECT_LOCK (dec);
+      res = __gst_audio_encoded_audio_convert (&dec->priv->ctx.info,
+          dec->priv->bytes_in, dec->priv->samples_out,
+          src_fmt, src_val, &dest_fmt, &dest_val);
+      GST_OBJECT_UNLOCK (dec);
+      if (!res)
         goto error;
       gst_query_set_convert (query, src_fmt, src_val, dest_fmt, dest_val);
       break;
@@ -2796,6 +2741,15 @@ gst_audio_decoder_src_query_default (GstAudioDecoder * dec, GstQuery * query)
         break;
       }
 
+      /* Refuse BYTES format queries. If it made sense to
+       * answer them, upstream would have already */
+      gst_query_parse_position (query, &format, NULL);
+
+      if (format == GST_FORMAT_BYTES) {
+        GST_LOG_OBJECT (dec, "Ignoring BYTES position query");
+        break;
+      }
+
       /* we start from the last seen time */
       time = dec->output_segment.position;
       /* correct for the segment values */
@@ -2807,7 +2761,6 @@ gst_audio_decoder_src_query_default (GstAudioDecoder * dec, GstQuery * query)
           "query %p: our time: %" GST_TIME_FORMAT, query, GST_TIME_ARGS (time));
 
       /* and convert to the final format */
-      gst_query_parse_position (query, &format, NULL);
       if (!(res = gst_pad_query_convert (pad, GST_FORMAT_TIME, time,
                   format, &value)))
         break;
@@ -2832,8 +2785,11 @@ gst_audio_decoder_src_query_default (GstAudioDecoder * dec, GstQuery * query)
       gint64 src_val, dest_val;
 
       gst_query_parse_convert (query, &src_fmt, &src_val, &dest_fmt, &dest_val);
-      if (!(res = gst_audio_info_convert (&dec->priv->ctx.info,
-                  src_fmt, src_val, dest_fmt, &dest_val)))
+      GST_OBJECT_LOCK (dec);
+      res = gst_audio_info_convert (&dec->priv->ctx.info,
+          src_fmt, src_val, dest_fmt, &dest_val);
+      GST_OBJECT_UNLOCK (dec);
+      if (!res)
         break;
       gst_query_set_convert (query, src_fmt, src_val, dest_fmt, dest_val);
       break;
@@ -3247,8 +3203,8 @@ gst_audio_decoder_get_latency (GstAudioDecoder * dec,
 /**
  * gst_audio_decoder_get_parse_state:
  * @dec: a #GstAudioDecoder
- * @sync: a pointer to a variable to hold the current sync state
- * @eos: a pointer to a variable to hold the current eos state
+ * @sync: (out) (optional): a pointer to a variable to hold the current sync state
+ * @eos: (out) (optional): a pointer to a variable to hold the current eos state
  *
  * Return current parsing (sync and eos) state.
  */
@@ -3262,6 +3218,27 @@ gst_audio_decoder_get_parse_state (GstAudioDecoder * dec,
     *sync = dec->priv->ctx.sync;
   if (eos)
     *eos = dec->priv->ctx.eos;
+}
+
+/**
+ * gst_audio_decoder_set_allocation_caps:
+ * @dec: a #GstAudioDecoder
+ * @allocation_caps: (allow-none): a #GstCaps or %NULL
+ *
+ * Sets a caps in allocation query which are different from the set
+ * pad's caps. Use this function before calling
+ * gst_audio_decoder_negotiate(). Setting to %NULL the allocation
+ * query will use the caps from the pad.
+ *
+ * Since: 1.10
+ */
+void
+gst_audio_decoder_set_allocation_caps (GstAudioDecoder * dec,
+    GstCaps * allocation_caps)
+{
+  g_return_if_fail (GST_IS_AUDIO_DECODER (dec));
+
+  gst_caps_replace (&dec->priv->ctx.allocation_caps, allocation_caps);
 }
 
 /**

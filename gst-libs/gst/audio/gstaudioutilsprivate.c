@@ -23,6 +23,10 @@
 #include "config.h"
 #endif
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 #include <gst/audio/audio.h>
 #include "gstaudioutilsprivate.h"
 
@@ -141,4 +145,135 @@ done:
   GST_LOG_OBJECT (element, "proxy caps %" GST_PTR_FORMAT, fcaps);
 
   return fcaps;
+}
+
+/**
+ * __gst_audio_encoded_audio_convert:
+ * @fmt: audio format of the encoded audio
+ * @bytes: number of encoded bytes
+ * @samples: number of encoded samples
+ * @src_format: source format
+ * @src_value: source value
+ * @dest_format: destination format
+ * @dest_value: destination format
+ *
+ * Helper function to convert @src_value in @src_format to @dest_value in
+ * @dest_format for encoded audio data.  Conversion is possible between
+ * BYTE and TIME format by using estimated bitrate based on
+ * @samples and @bytes (and @fmt).
+ */
+gboolean
+__gst_audio_encoded_audio_convert (GstAudioInfo * fmt,
+    gint64 bytes, gint64 samples, GstFormat src_format,
+    gint64 src_value, GstFormat * dest_format, gint64 * dest_value)
+{
+  gboolean res = FALSE;
+
+  g_return_val_if_fail (dest_format != NULL, FALSE);
+  g_return_val_if_fail (dest_value != NULL, FALSE);
+
+  if (G_UNLIKELY (src_format == *dest_format || src_value == 0 ||
+          src_value == -1)) {
+    if (dest_value)
+      *dest_value = src_value;
+    return TRUE;
+  }
+
+  if (samples == 0 || bytes == 0 || fmt->rate == 0) {
+    GST_DEBUG ("not enough metadata yet to convert");
+    goto exit;
+  }
+
+  bytes *= fmt->rate;
+
+  switch (src_format) {
+    case GST_FORMAT_BYTES:
+      switch (*dest_format) {
+        case GST_FORMAT_TIME:
+          *dest_value = gst_util_uint64_scale (src_value,
+              GST_SECOND * samples, bytes);
+          res = TRUE;
+          break;
+        default:
+          res = FALSE;
+      }
+      break;
+    case GST_FORMAT_TIME:
+      switch (*dest_format) {
+        case GST_FORMAT_BYTES:
+          *dest_value = gst_util_uint64_scale (src_value, bytes,
+              samples * GST_SECOND);
+          res = TRUE;
+          break;
+        default:
+          res = FALSE;
+      }
+      break;
+    default:
+      res = FALSE;
+  }
+
+exit:
+  return res;
+}
+
+#ifdef _WIN32
+/* *INDENT-OFF* */
+static struct
+{
+  HMODULE dll;
+  gboolean tried_loading;
+
+    HANDLE (WINAPI * AvSetMmThreadCharacteristics) (LPCSTR, LPDWORD);
+    BOOL (WINAPI * AvRevertMmThreadCharacteristics) (HANDLE);
+} _gst_audio_avrt_tbl = { 0 };
+/* *INDENT-ON* */
+#endif
+
+static gboolean
+__gst_audio_init_thread_priority (void)
+{
+#ifdef _WIN32
+  if (_gst_audio_avrt_tbl.tried_loading)
+    return _gst_audio_avrt_tbl.dll != NULL;
+
+  if (!_gst_audio_avrt_tbl.dll)
+    _gst_audio_avrt_tbl.dll = LoadLibrary (TEXT ("avrt.dll"));
+
+  if (!_gst_audio_avrt_tbl.dll) {
+    GST_WARNING ("Failed to set thread priority, can't find avrt.dll");
+    _gst_audio_avrt_tbl.tried_loading = TRUE;
+    return FALSE;
+  }
+
+  _gst_audio_avrt_tbl.AvSetMmThreadCharacteristics =
+      GetProcAddress (_gst_audio_avrt_tbl.dll, "AvSetMmThreadCharacteristicsA");
+  _gst_audio_avrt_tbl.AvRevertMmThreadCharacteristics =
+      GetProcAddress (_gst_audio_avrt_tbl.dll,
+      "AvRevertMmThreadCharacteristics");
+
+  _gst_audio_avrt_tbl.tried_loading = TRUE;
+#endif
+
+  return TRUE;
+}
+
+/*
+ * Increases the priority of the thread it's called from
+ */
+gpointer
+__gst_audio_set_thread_priority (void)
+{
+  if (!__gst_audio_init_thread_priority ())
+    return NULL;
+
+#ifdef _WIN32
+  DWORD taskIndex = 0;
+  /* This is only used from ringbuffer thread functions, so we don't need to
+   * ever need to revert the thread priorities. */
+  return _gst_audio_avrt_tbl.AvSetMmThreadCharacteristics (TEXT ("Pro Audio"),
+      &taskIndex);
+#else
+  return NULL;
+#endif
 }

@@ -109,7 +109,7 @@ gst_video_get_colorimetry (const gchar * s)
  * Parse the colorimetry string and update @cinfo with the parsed
  * values.
  *
- * Returns: #TRUE if @color points to valid colorimetry info.
+ * Returns: %TRUE if @color points to valid colorimetry info.
  */
 gboolean
 gst_video_colorimetry_from_string (GstVideoColorimetry * cinfo,
@@ -144,7 +144,7 @@ gst_video_colorimetry_from_string (GstVideoColorimetry * cinfo,
  * Returns: a string representation of @cinfo.
  */
 gchar *
-gst_video_colorimetry_to_string (GstVideoColorimetry * cinfo)
+gst_video_colorimetry_to_string (const GstVideoColorimetry * cinfo)
 {
   gint i;
 
@@ -168,11 +168,12 @@ gst_video_colorimetry_to_string (GstVideoColorimetry * cinfo)
  * Check if the colorimetry information in @info matches that of the
  * string @color.
  *
- * Returns: #TRUE if @color conveys the same colorimetry info as the color
+ * Returns: %TRUE if @color conveys the same colorimetry info as the color
  * information in @info.
  */
 gboolean
-gst_video_colorimetry_matches (GstVideoColorimetry * cinfo, const gchar * color)
+gst_video_colorimetry_matches (const GstVideoColorimetry * cinfo,
+    const gchar * color)
 {
   const ColorimetryInfo *ci;
 
@@ -186,8 +187,8 @@ gst_video_colorimetry_matches (GstVideoColorimetry * cinfo, const gchar * color)
  * gst_video_color_range_offsets:
  * @range: a #GstVideoColorRange
  * @info: a #GstVideoFormatInfo
- * @offset: (out): output offsets
- * @scale: (out): output scale
+ * @offset: (out caller-allocates) (array fixed-size=4): output offsets
+ * @scale: (out caller-allocates) (array fixed-size=4): output scale
  *
  * Compute the offset and scale values for each component of @info. For each
  * component, (c[i] - offset[i]) / scale[i] will scale the component c[i] to the
@@ -252,7 +253,7 @@ gst_video_color_range_offsets (GstVideoColorRange range,
  *
  * Compare the 2 colorimetry sets for equality
  *
- * Returns: #TRUE if @cinfo and @other are equal.
+ * Returns: %TRUE if @cinfo and @other are equal.
  *
  * Since: 1.6
  */
@@ -300,8 +301,8 @@ static const GstVideoColorPrimariesInfo color_primaries[] = {
 const GstVideoColorPrimariesInfo *
 gst_video_color_primaries_get_info (GstVideoColorPrimaries primaries)
 {
-  g_return_val_if_fail (primaries <
-      (GstVideoColorPrimaries) G_N_ELEMENTS (color_primaries), NULL);
+  g_return_val_if_fail ((gint) primaries <
+      G_N_ELEMENTS (color_primaries), NULL);
 
   return &color_primaries[primaries];
 }
@@ -309,8 +310,8 @@ gst_video_color_primaries_get_info (GstVideoColorPrimaries primaries)
 /**
  * gst_video_color_matrix_get_Kr_Kb:
  * @matrix: a #GstVideoColorMatrix
- * @Kr: result red channel coefficient
- * @Kb: result blue channel coefficient
+ * @Kr: (out): result red channel coefficient
+ * @Kb: (out): result blue channel coefficient
  *
  * Get the coefficients used to convert between Y'PbPr and R'G'B' using @matrix.
  *

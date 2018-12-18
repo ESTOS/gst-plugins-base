@@ -8,6 +8,7 @@ libgstriff_@GST_API_VERSION@_la_SOURCES = \
 libgstriff_@GST_API_VERSION@includedir = $(includedir)/gstreamer-@GST_API_VERSION@/gst/riff
 libgstriff_@GST_API_VERSION@include_HEADERS = \
 	riff.h \
+	riff-prelude.h \
 	riff-ids.h \
 	riff-media.h \
 	riff-read.h
@@ -33,7 +34,8 @@ libgstriff_@GST_API_VERSION@_la_LDFLAGS = $(GST_LIB_LDFLAGS) $(GST_ALL_LDFLAGS) 
 #
 #GstRiff-@GST_API_VERSION@.gir: $(INTROSPECTION_SCANNER) libgstriff-@GST_API_VERSION@.la
 #	$(AM_V_GEN)PKG_CONFIG_PATH="$(GST_PKG_CONFIG_PATH)" GI_SCANNER_DISABLE_CACHE=yes\
-#		GST_PLUGIN_SYSTEM_PATH_1_0="" GST_PLUGIN_PATH_1_0="" GST_REGISTRY_UPDATE=no \
+#		GST_PLUGIN_SYSTEM_PATH_1_0="" GST_PLUGIN_PATH_1_0="" GST_REGISTRY_DISABLE=yes \
+#		CPPFLAGS="$(CPPFLAGS)" CFLAGS="$(CFLAGS)" LDFLAGS="$(LDFLAGS)" CC="$(CC)" PKG_CONFIG="$(PKG_CONFIG)" DLLTOOL="$(DLLTOOL)" \
 #		$(INTROSPECTION_SCANNER) -v --namespace GstRiff \
 #		--nsversion=@GST_API_VERSION@ \
 #		--strip-prefix=Gst \

@@ -20,16 +20,14 @@
 
 /**
  * SECTION:gstrtpbuffer
+ * @title: GstRTPBuffer
  * @short_description: Helper methods for dealing with RTP buffers
  * @see_also: #GstRTPBasePayload, #GstRTPBaseDepayload, gstrtcpbuffer
  *
- * <refsect2>
- * <para>
- * The GstRTPBuffer helper functions makes it easy to parse and create regular 
+ * The GstRTPBuffer helper functions makes it easy to parse and create regular
  * #GstBuffer objects that contain RTP payloads. These buffers are typically of
  * 'application/x-rtp' #GstCaps.
- * </para>
- * </refsect2>
+ *
  */
 
 #include "gstrtpbuffer.h"
@@ -181,7 +179,7 @@ gst_rtp_buffer_new_take_data (gpointer data, gsize len)
  * Returns: A newly allocated buffer with a copy of @data and of size @len.
  */
 GstBuffer *
-gst_rtp_buffer_new_copy_data (gpointer data, gsize len)
+gst_rtp_buffer_new_copy_data (gconstpointer data, gsize len)
 {
   return gst_rtp_buffer_new_take_data (g_memdup (data, len), len);
 }
@@ -658,7 +656,7 @@ gst_rtp_buffer_pad_to (GstRTPBuffer * rtp, guint len)
  * @rtp: the RTP packet
  *
  * Check if the extension bit is set on the RTP packet in @buffer.
- * 
+ *
  * Returns: TRUE if @buffer has the extension bit set.
  */
 gboolean
@@ -693,7 +691,7 @@ gst_rtp_buffer_set_extension (GstRTPBuffer * rtp, gboolean extension)
  *
  * If @buffer did not contain an extension, this function will return %FALSE
  * with @bits, @data and @wordlen unchanged.
- * 
+ *
  * Returns: TRUE if @buffer had the extension bit set.
  */
 gboolean
@@ -757,20 +755,45 @@ gst_rtp_buffer_get_extension_bytes (GstRTPBuffer * rtp, guint16 * bits)
   return g_bytes_new (buf_data, 4 * buf_len);
 }
 
+static gboolean
+gst_rtp_buffer_map_payload (GstRTPBuffer * rtp)
+{
+  guint hlen, plen;
+  guint idx, length;
+  gsize skip;
+
+  if (rtp->map[2].memory != NULL)
+    return TRUE;
+
+  hlen = gst_rtp_buffer_get_header_len (rtp);
+  plen = gst_buffer_get_size (rtp->buffer) - hlen - rtp->size[3];
+
+  if (!gst_buffer_find_memory (rtp->buffer, hlen, plen, &idx, &length, &skip))
+    return FALSE;
+
+  if (!gst_buffer_map_range (rtp->buffer, idx, length, &rtp->map[2],
+          rtp->map[0].flags))
+    return FALSE;
+
+  rtp->data[2] = rtp->map[2].data + skip;
+  rtp->size[2] = plen;
+
+  return TRUE;
+}
+
 /* ensure header, payload and padding are in separate buffers */
 static void
 ensure_buffers (GstRTPBuffer * rtp)
 {
   guint i, pos;
-  gsize offset;
   gboolean changed = FALSE;
 
   /* make sure payload is mapped */
-  gst_rtp_buffer_get_payload (rtp);
+  gst_rtp_buffer_map_payload (rtp);
 
   for (i = 0, pos = 0; i < 4; i++) {
     if (rtp->size[i]) {
-      offset = rtp->map[i].data - (guint8 *) rtp->data[i];
+      gsize offset = (guint8 *) rtp->data[i] - rtp->map[i].data;
 
       if (offset != 0 || rtp->map[i].size != rtp->size[i]) {
         GstMemory *mem;
@@ -866,7 +889,7 @@ gst_rtp_buffer_set_extension_data (GstRTPBuffer * rtp, guint16 bits,
  * @rtp: the RTP packet
  *
  * Get the SSRC of the RTP packet in @buffer.
- * 
+ *
  * Returns: the SSRC of @buffer in host order.
  */
 guint32
@@ -893,7 +916,7 @@ gst_rtp_buffer_set_ssrc (GstRTPBuffer * rtp, guint32 ssrc)
  * @rtp: the RTP packet
  *
  * Get the CSRC count of the RTP packet in @buffer.
- * 
+ *
  * Returns: the CSRC count of @buffer.
  */
 guint8
@@ -908,7 +931,7 @@ gst_rtp_buffer_get_csrc_count (GstRTPBuffer * rtp)
  * @idx: the index of the CSRC to get
  *
  * Get the CSRC at index @idx in @buffer.
- * 
+ *
  * Returns: the CSRC at index @idx in host order.
  */
 guint32
@@ -1140,25 +1163,11 @@ gst_rtp_buffer_get_payload_len (GstRTPBuffer * rtp)
 gpointer
 gst_rtp_buffer_get_payload (GstRTPBuffer * rtp)
 {
-  guint hlen, plen;
-  guint idx, length;
-  gsize skip;
-
   if (rtp->data[2])
     return rtp->data[2];
 
-  hlen = gst_rtp_buffer_get_header_len (rtp);
-  plen = gst_buffer_get_size (rtp->buffer) - hlen - rtp->size[3];
-
-  if (!gst_buffer_find_memory (rtp->buffer, hlen, plen, &idx, &length, &skip))
+  if (!gst_rtp_buffer_map_payload (rtp))
     return NULL;
-
-  if (!gst_buffer_map_range (rtp->buffer, idx, length, &rtp->map[2],
-          rtp->map[0].flags))
-    return NULL;
-
-  rtp->data[2] = rtp->map[2].data + skip;
-  rtp->size[2] = plen;
 
   return rtp->data[2];
 }
@@ -1240,21 +1249,24 @@ gst_rtp_buffer_compare_seqnum (guint16 seqnum1, guint16 seqnum2)
 
 /**
  * gst_rtp_buffer_ext_timestamp:
- * @exttimestamp: a previous extended timestamp
+ * @exttimestamp: (inout): a previous extended timestamp
  * @timestamp: a new timestamp
  *
- * Update the @exttimestamp field with @timestamp. For the first call of the
- * method, @exttimestamp should point to a location with a value of -1.
+ * Update the @exttimestamp field with the extended timestamp of @timestamp
+ * For the first call of the method, @exttimestamp should point to a location
+ * with a value of -1.
  *
- * This function makes sure that the returned value is a constantly increasing
- * value even in the case where there is a timestamp wraparound.
+ * This function is able to handle both forward and backward timestamps taking
+ * into account:
+ *   - timestamp wraparound making sure that the returned value is properly increased.
+ *   - timestamp unwraparound making sure that the returned value is properly decreased.
  *
- * Returns: The extended timestamp of @timestamp.
+ * Returns: The extended timestamp of @timestamp or 0 if the result can't go anywhere backwards.
  */
 guint64
 gst_rtp_buffer_ext_timestamp (guint64 * exttimestamp, guint32 timestamp)
 {
-  guint64 result, diff, ext;
+  guint64 result, ext;
 
   g_return_val_if_fail (exttimestamp != NULL, -1);
 
@@ -1267,17 +1279,33 @@ gst_rtp_buffer_ext_timestamp (guint64 * exttimestamp, guint32 timestamp)
     result = timestamp + (ext & ~(G_GUINT64_CONSTANT (0xffffffff)));
 
     /* check for timestamp wraparound */
-    if (result < ext)
-      diff = ext - result;
-    else
-      diff = result - ext;
+    if (result < ext) {
+      guint64 diff = ext - result;
 
-    if (diff > G_MAXINT32) {
-      /* timestamp went backwards more than allowed, we wrap around and get
-       * updated extended timestamp. */
-      result += (G_GUINT64_CONSTANT (1) << 32);
+      if (diff > G_MAXINT32) {
+        /* timestamp went backwards more than allowed, we wrap around and get
+         * updated extended timestamp. */
+        result += (G_GUINT64_CONSTANT (1) << 32);
+      }
+    } else {
+      guint64 diff = result - ext;
+
+      if (diff > G_MAXINT32) {
+        if (result < (G_GUINT64_CONSTANT (1) << 32)) {
+          GST_WARNING
+              ("Cannot unwrap, any wrapping took place yet. Returning 0 without updating extended timestamp.");
+          return 0;
+        } else {
+          /* timestamp went forwards more than allowed, we unwrap around and get
+           * updated extended timestamp. */
+          result -= (G_GUINT64_CONSTANT (1) << 32);
+          /* We don't want the extended timestamp storage to go back, ever */
+          return result;
+        }
+      }
     }
   }
+
   *exttimestamp = result;
 
   return result;
@@ -1494,7 +1522,7 @@ get_onebyte_header_end_offset (guint8 * pdata, guint wordlen)
 
 gboolean
 gst_rtp_buffer_add_extension_onebyte_header (GstRTPBuffer * rtp, guint8 id,
-    gpointer data, guint size)
+    gconstpointer data, guint size)
 {
   guint16 bits;
   guint8 *pdata = 0;
@@ -1593,7 +1621,7 @@ get_twobytes_header_end_offset (const guint8 * pdata, guint wordlen)
 
 gboolean
 gst_rtp_buffer_add_extension_twobytes_header (GstRTPBuffer * rtp,
-    guint8 appbits, guint8 id, gpointer data, guint size)
+    guint8 appbits, guint8 id, gconstpointer data, guint size)
 {
   guint16 bits;
   guint8 *pdata = 0;

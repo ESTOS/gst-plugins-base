@@ -22,6 +22,7 @@
 
 /**
  * SECTION:element-theoradec
+ * @title: theoradec
  * @see_also: theoraenc, oggdemux
  *
  * This element decodes theora streams into raw video
@@ -29,13 +30,13 @@
  * video codec maintained by the <ulink url="http://www.xiph.org/">Xiph.org
  * Foundation</ulink>, based on the VP3 codec.
  *
- * <refsect2>
- * <title>Example pipeline</title>
+ * ## Example pipeline
  * |[
  * gst-launch-1.0 -v filesrc location=videotestsrc.ogg ! oggdemux ! theoradec ! videoconvert ! videoscale ! autovideosink
- * ]| This example pipeline will decode an ogg stream and decodes the theora video in it.
+ * ]|
+ *  This example pipeline will decode an ogg stream and decodes the theora video in it.
  * Refer to the theoraenc example to create the ogg file.
- * </refsect2>
+ *
  */
 
 #ifdef HAVE_CONFIG_H
@@ -172,13 +173,12 @@ gst_theora_dec_class_init (GstTheoraDecClass * klass)
             G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
   }
 
-  gst_element_class_add_pad_template (element_class,
-      gst_static_pad_template_get (&theora_dec_src_factory));
-  gst_element_class_add_pad_template (element_class,
-      gst_static_pad_template_get (&theora_dec_sink_factory));
-  gst_element_class_set_static_metadata (element_class,
-      "Theora video decoder", "Codec/Decoder/Video",
-      "decode raw theora streams to raw YUV video",
+  gst_element_class_add_static_pad_template (element_class,
+      &theora_dec_src_factory);
+  gst_element_class_add_static_pad_template (element_class,
+      &theora_dec_sink_factory);
+  gst_element_class_set_static_metadata (element_class, "Theora video decoder",
+      "Codec/Decoder/Video", "decode raw theora streams to raw YUV video",
       "Benjamin Otte <otte@gnome.org>, Wim Taymans <wim@fluendo.com>");
 
   video_decoder_class->start = GST_DEBUG_FUNCPTR (theora_dec_start);
@@ -278,9 +278,11 @@ theora_dec_parse (GstVideoDecoder * decoder,
 
   if (av > 0) {
     data = gst_adapter_map (adapter, 1);
-    /* check for keyframe; must not be header packet */
-    if (!(data[0] & 0x80) && (data[0] & 0x40) == 0)
+    /* check for keyframe; must not be header packet (0x80 | 0x40) */
+    if (!(data[0] & 0xc0)) {
       GST_VIDEO_CODEC_FRAME_SET_SYNC_POINT (frame);
+      GST_LOG_OBJECT (decoder, "Found keyframe");
+    }
     gst_adapter_unmap (adapter);
   }
 
@@ -463,6 +465,9 @@ theora_handle_type_packet (GstTheoraDec * dec)
   GST_DEBUG_OBJECT (dec, "after fixup frame dimension %dx%d, offset %d:%d",
       info->width, info->height, dec->info.pic_x, dec->info.pic_y);
 
+  if (info->width == 0 || info->height == 0)
+    goto invalid_dimensions;
+
   /* done */
   dec->decoder = th_decode_alloc (&dec->info, dec->setup);
 
@@ -514,7 +519,8 @@ theora_handle_type_packet (GstTheoraDec * dec)
 
   dec->uncropped_info = state->info;
 
-  gst_video_decoder_negotiate (GST_VIDEO_DECODER (dec));
+  if (!gst_video_decoder_negotiate (GST_VIDEO_DECODER (dec)))
+    goto not_negotiated;
 
   dec->have_header = TRUE;
 
@@ -524,6 +530,19 @@ theora_handle_type_packet (GstTheoraDec * dec)
 unsupported_format:
   {
     GST_ERROR_OBJECT (dec, "Invalid pixel format %d", dec->info.pixel_fmt);
+    return GST_FLOW_ERROR;
+  }
+
+not_negotiated:
+  {
+    GST_ERROR_OBJECT (dec, "Failed to negotiate");
+    return GST_FLOW_NOT_NEGOTIATED;
+  }
+
+invalid_dimensions:
+  {
+    GST_ERROR_OBJECT (dec, "Invalid dimensions (width:%d, height:%d)",
+        info->width, info->height);
     return GST_FLOW_ERROR;
   }
 }

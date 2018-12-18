@@ -18,6 +18,7 @@
  */
 /**
  * SECTION:gstaudio
+ * @title: GstAudio
  * @short_description: Support library for audio elements
  *
  * This library contains some helper functions for audio elements.
@@ -60,8 +61,8 @@ ensure_debug_category (void)
  * @segment: Segment in %GST_FORMAT_TIME or %GST_FORMAT_DEFAULT to which
  *           the buffer should be clipped.
  * @rate: sample rate.
- * @bpf: size of one audio frame in bytes. This is the size of one sample
- * * channels.
+ * @bpf: size of one audio frame in bytes. This is the size of one sample *
+ * number of channels.
  *
  * Clip the buffer to the given %GstSegment.
  *
@@ -75,8 +76,8 @@ ensure_debug_category (void)
  * is not clipped
  */
 GstBuffer *
-gst_audio_buffer_clip (GstBuffer * buffer, GstSegment * segment, gint rate,
-    gint bpf)
+gst_audio_buffer_clip (GstBuffer * buffer, const GstSegment * segment,
+    gint rate, gint bpf)
 {
   GstBuffer *ret;
   GstClockTime timestamp = GST_CLOCK_TIME_NONE, duration = GST_CLOCK_TIME_NONE;
@@ -224,14 +225,18 @@ gst_audio_buffer_clip (GstBuffer * buffer, GstSegment * segment, gint rate,
     gst_buffer_unref (buffer);
 
     GST_DEBUG ("timestamp %" GST_TIME_FORMAT, GST_TIME_ARGS (timestamp));
-    GST_BUFFER_TIMESTAMP (ret) = timestamp;
+    if (ret) {
+      GST_BUFFER_TIMESTAMP (ret) = timestamp;
 
-    if (change_duration)
-      GST_BUFFER_DURATION (ret) = duration;
-    if (change_offset)
-      GST_BUFFER_OFFSET (ret) = offset;
-    if (change_offset_end)
-      GST_BUFFER_OFFSET_END (ret) = offset_end;
+      if (change_duration)
+        GST_BUFFER_DURATION (ret) = duration;
+      if (change_offset)
+        GST_BUFFER_OFFSET (ret) = offset;
+      if (change_offset_end)
+        GST_BUFFER_OFFSET_END (ret) = offset_end;
+    } else {
+      GST_ERROR ("copy_region failed");
+    }
   }
   return ret;
 }

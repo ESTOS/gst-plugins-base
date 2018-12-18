@@ -20,7 +20,10 @@
  * Boston, MA 02110-1301, USA.
  */
 
+#ifdef HAVE_CONFIG_H
 #include <config.h>
+#endif
+
 #include <gst/check/gstcheck.h>
 
 #include <gst/app/gstappsrc.h>
@@ -62,6 +65,7 @@
 #include <gst/video/gstvideofilter.h>
 #include <gst/video/gstvideosink.h>
 #include <gst/video/colorbalance.h>
+#include <gst/video/videodirection.h>
 #include <gst/video/videoorientation.h>
 #include <gst/video/videooverlay.h>
 #include <gst/video/navigation.h>

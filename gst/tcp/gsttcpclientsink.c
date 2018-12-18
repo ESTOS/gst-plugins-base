@@ -22,18 +22,19 @@
 
 /**
  * SECTION:element-tcpclientsink
+ * @title: tcpclientsink
  * @see_also: #tcpclientsink
  *
- * <refsect2>
- * <title>Example launch line</title>
+ * ## Example launch line
  * |[
  * # server:
  * nc -l -p 3000
  * # client:
  * gst-launch-1.0 fdsink fd=1 ! tcpclientsink port=3000
- * ]| everything you type in the client is shown on the server (fd=1 means
+ * ]|
+ *  everything you type in the client is shown on the server (fd=1 means
  * standard input which is the command line input file descriptor)
- * </refsect2>
+ *
  */
 
 #ifdef HAVE_CONFIG_H
@@ -114,8 +115,7 @@ gst_tcp_client_sink_class_init (GstTCPClientSinkClass * klass)
           0, TCP_HIGHEST_PORT, TCP_DEFAULT_PORT,
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
-  gst_element_class_add_pad_template (gstelement_class,
-      gst_static_pad_template_get (&sinktemplate));
+  gst_element_class_add_static_pad_template (gstelement_class, &sinktemplate);
 
   gst_element_class_set_static_metadata (gstelement_class,
       "TCP client sink", "Sink/Network",

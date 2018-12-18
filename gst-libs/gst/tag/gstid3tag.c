@@ -21,16 +21,14 @@
 
 /**
  * SECTION:gsttagid3
+ * @title: ID3 tag utils
  * @short_description: tag mappings and support functions for plugins
  *                     dealing with ID3v1 and ID3v2 tags
  * @see_also: #GstTagList
- * 
- * <refsect2>
- * <para>
+ *
  * Contains various utility functions for plugins to parse or create
  * ID3 tags and map ID3v2 identifiers to and from GStreamer identifiers.
- * </para>
- * </refsect2>
+ *
  */
 
 #ifdef HAVE_CONFIG_H
@@ -254,7 +252,7 @@ gst_tag_extract_id3v1_string (GstTagList * list, const gchar * tag,
 
 /**
  * gst_tag_list_new_from_id3v1:
- * @data: 128 bytes of data containing the ID3v1 tag
+ * @data: (array fixed-size=128): 128 bytes of data containing the ID3v1 tag
  *
  * Parses the data containing an ID3v1 tag and returns a #GstTagList from the
  * parsed data.
@@ -305,7 +303,7 @@ gst_tag_list_new_from_id3v1 (const guint8 * data)
 /**
  * gst_tag_id3_genre_count:
  *
- * Gets the number of ID3v1 genres that can be identified. Winamp genres are 
+ * Gets the number of ID3v1 genres that can be identified. Winamp genres are
  * included.
  *
  * Returns: the number of ID3v1 genres that can be identified
@@ -339,7 +337,7 @@ gst_tag_id3_genre_get (const guint id)
 /**
  * gst_tag_list_add_id3_image:
  * @tag_list: a tag list
- * @image_data: the (encoded) image
+ * @image_data: (array length=image_data_len): the (encoded) image
  * @image_data_len: the length of the encoded image data at @image_data
  * @id3_picture_type: picture type as per the ID3 (v2.4.0) specification for
  *    the APIC frame (0 = unknown/other)

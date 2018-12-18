@@ -7,16 +7,17 @@
 #
 msgid ""
 msgstr ""
-"Project-Id-Version: gst-plugins-base 1.7.90\n"
+"Project-Id-Version: gst-plugins-base 1.10.0\n"
 "Report-Msgid-Bugs-To: http://bugzilla.gnome.org/\n"
-"POT-Creation-Date: 2016-04-20 15:29+0300\n"
-"PO-Revision-Date: 2016-03-03 07:49+0700\n"
+"POT-Creation-Date: 2017-05-04 15:02+0300\n"
+"PO-Revision-Date: 2016-11-02 13:29+0700\n"
 "Last-Translator: Trần Ngọc Quân <vnwildman@gmail.com>\n"
 "Language-Team: Vietnamese <translation-team-vi@lists.sourceforge.net>\n"
 "Language: vi\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
+"X-Bugs: Report translation errors to the Language-Team address.\n"
 "Plural-Forms: nplurals=1; plural=0;\n"
 "X-Language-Team-Website: <http://translationproject.org/team/vi.html>\n"
 "X-Generator: Gtranslator 2.91.7\n"
@@ -75,9 +76,6 @@ msgstr "Không thể di chuyển vị trí đọc trên đĩa CD."
 msgid "Could not read CD."
 msgstr "Không thể đọc đĩa CD."
 
-msgid "Internal data stream error."
-msgstr "Lỗi luồng dữ liệu nội bộ."
-
 #, c-format
 msgid "Missing element '%s' - check your GStreamer installation."
 msgstr "Thiếu phần tử “%s” — hãy kiểm tra lại phần cài đặt GStreamer."
@@ -90,6 +88,12 @@ msgstr "Hình như đây là tập tin văn bản"
 
 msgid "Could not create \"uridecodebin\" element."
 msgstr "Không thể tạo phần tử “uridecodebin”."
+
+msgid "Could not create \"decodebin3\" element."
+msgstr "Không thể tạo phần tử “uridecodebin3”."
+
+msgid "Could not create \"urisourcebin\" element."
+msgstr "Không thể tạo phần tử “urisourcebin”."
 
 #, c-format
 msgid "Both autovideosink and %s elements are missing."
@@ -224,6 +228,9 @@ msgstr "Định dạng phụ đề TMPlayer"
 
 msgid "Kate subtitle format"
 msgstr "Định dạng phụ đề Kate"
+
+msgid "WebVTT subtitle format"
+msgstr "Định dạng phụ đề WebVTT"
 
 msgid "Uncompressed video"
 msgstr "Video không nén"
@@ -393,6 +400,15 @@ msgstr "độ dài tiêu cự khi chụp"
 
 msgid "Focal length of the lens used capturing the image, in mm"
 msgstr "Chiều dài tiêu cự ống kính được sử dụng khi chụp một ảnh, tính bằng mm"
+
+msgid "capturing 35 mm equivalent focal length"
+msgstr "độ dài tiêu cự tương đương 25mm khi chụp"
+
+msgid ""
+"35 mm equivalent focal length of the lens used capturing the image, in mm"
+msgstr ""
+"Chiều dài tiêu cự ống kính tương đương 35mm được sử dụng khi chụp một ảnh, "
+"tính bằng mm"
 
 msgid "capturing digital zoom ratio"
 msgstr "tỷ lệ phóng to kỹ thuật số khi chụp"
@@ -658,6 +674,9 @@ msgstr "Bạn phải cung cấp ít nhất là một tên tập tin hay URI đ�
 
 msgid "Press 'k' to see a list of keyboard shortcuts.\n"
 msgstr "Nhấn phím “k” để xem toàn bộ phím tắt.\n"
+
+#~ msgid "Internal data stream error."
+#~ msgstr "Lỗi luồng dữ liệu nội bộ."
 
 #~ msgid "A %s plugin is required to play this stream, but not installed."
 #~ msgstr "Cần phần bổ sung %s để phát luồng này nhưng chưa cài đặt."

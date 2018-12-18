@@ -22,43 +22,27 @@
 
 /**
  * SECTION:gstaudiosink
+ * @title: GstAudioSink
  * @short_description: Simple base class for audio sinks
  * @see_also: #GstAudioBaseSink, #GstAudioRingBuffer, #GstAudioSink.
  *
  * This is the most simple base class for audio sinks that only requires
  * subclasses to implement a set of simple functions:
  *
- * <variablelist>
- *   <varlistentry>
- *     <term>open()</term>
- *     <listitem><para>Open the device.</para></listitem>
- *   </varlistentry>
- *   <varlistentry>
- *     <term>prepare()</term>
- *     <listitem><para>Configure the device with the specified format.</para></listitem>
- *   </varlistentry>
- *   <varlistentry>
- *     <term>write()</term>
- *     <listitem><para>Write samples to the device.</para></listitem>
- *   </varlistentry>
- *   <varlistentry>
- *     <term>reset()</term>
- *     <listitem><para>Unblock writes and flush the device.</para></listitem>
- *   </varlistentry>
- *   <varlistentry>
- *     <term>delay()</term>
- *     <listitem><para>Get the number of samples written but not yet played
- *     by the device.</para></listitem>
- *   </varlistentry>
- *   <varlistentry>
- *     <term>unprepare()</term>
- *     <listitem><para>Undo operations done by prepare.</para></listitem>
- *   </varlistentry>
- *   <varlistentry>
- *     <term>close()</term>
- *     <listitem><para>Close the device.</para></listitem>
- *   </varlistentry>
- * </variablelist>
+ * * `open()` :Open the device.
+ *
+ * * `prepare()` :Configure the device with the specified format.
+ *
+ * * `write()` :Write samples to the device.
+ *
+ * * `reset()` :Unblock writes and flush the device.
+ *
+ * * `delay()` :Get the number of samples written but not yet played
+ * by the device.
+ *
+ * * `unprepare()` :Undo operations done by prepare.
+ *
+ * * `close()` :Close the device.
  *
  * All scheduling of samples and timestamps is done in this base class
  * together with #GstAudioBaseSink using a default implementation of a
@@ -69,6 +53,7 @@
 
 #include <gst/audio/audio.h>
 #include "gstaudiosink.h"
+#include "gstaudioutilsprivate.h"
 
 GST_DEBUG_CATEGORY_STATIC (gst_audio_sink_debug);
 #define GST_CAT_DEFAULT gst_audio_sink_debug
@@ -228,6 +213,9 @@ audioringbuffer_thread_func (GstAudioRingBuffer * buf)
   writefunc = csink->write;
   if (writefunc == NULL)
     goto no_function;
+
+  if (G_UNLIKELY (!__gst_audio_set_thread_priority ()))
+    GST_WARNING_OBJECT (sink, "failed to set thread priority");
 
   message = gst_message_new_stream_status (GST_OBJECT_CAST (buf),
       GST_STREAM_STATUS_TYPE_ENTER, GST_ELEMENT_CAST (sink));

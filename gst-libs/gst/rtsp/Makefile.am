@@ -2,6 +2,7 @@ libgstrtspincludedir = $(includedir)/gstreamer-@GST_API_VERSION@/gst/rtsp
 
 libgstrtspinclude_HEADERS = \
 			    rtsp.h \
+			    rtsp-prelude.h \
 			    gstrtsp.h \
 			    gstrtsptransport.h \
 			    gstrtspurl.h \
@@ -44,6 +45,8 @@ glib_gen_prefix = __gst_rtsp
 glib_enum_define = gst_rtsp
 glib_enum_headers = $(libgstrtspinclude_HEADERS)
 glib_gen_basename = gstrtsp
+glib_gen_decl_banner=GST_RTSP_API
+glib_gen_decl_include=\#include <gst/rtsp/rtsp-prelude.h>
 
 include $(top_srcdir)/common/gst-glib-gen.mak
 
@@ -57,7 +60,8 @@ gir_sources+=$(patsubst %,$(builddir)/%, $(nodist_libgstrtsp_@GST_API_VERSION@_l
 
 GstRtsp-@GST_API_VERSION@.gir: $(INTROSPECTION_SCANNER) libgstrtsp-@GST_API_VERSION@.la
 	$(AM_V_GEN)PKG_CONFIG_PATH="$(GST_PKG_CONFIG_PATH)" GI_SCANNER_DISABLE_CACHE=yes\
-		GST_PLUGIN_SYSTEM_PATH_1_0="" GST_PLUGIN_PATH_1_0="" GST_REGISTRY_UPDATE=no \
+		GST_PLUGIN_SYSTEM_PATH_1_0="" GST_PLUGIN_PATH_1_0="" GST_REGISTRY_DISABLE=yes \
+		CPPFLAGS="$(CPPFLAGS)" CFLAGS="$(CFLAGS)" LDFLAGS="$(LDFLAGS)" CC="$(CC)" PKG_CONFIG="$(PKG_CONFIG)" DLLTOOL="$(DLLTOOL)" \
 		$(INTROSPECTION_SCANNER) -v --namespace GstRtsp \
 		--nsversion=@GST_API_VERSION@ \
 		--identifier-prefix=Gst \

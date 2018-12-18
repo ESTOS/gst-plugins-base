@@ -20,17 +20,14 @@
 
  /**
  * SECTION:gstvideofilter
+ * @title: GstVideoFilter
  * @short_description: Base class for video filters
- * 
- * <refsect2>
- * <para>
+ *
  * Provides useful functions and a base class for video filters.
- * </para>
- * <para>
+ *
  * The videofilter will by default enable QoS on the parent GstBaseTransform
  * to implement frame dropping.
- * </para>
- * </refsect2>
+ *
  */
 
 #ifdef HAVE_CONFIG_H
@@ -130,6 +127,9 @@ gst_video_filter_decide_allocation (GstBaseTransform * trans, GstQuery * query)
 
   if (gst_query_get_n_allocation_pools (query) > 0) {
     gst_query_parse_nth_allocation_pool (query, 0, &pool, &size, &min, &max);
+
+    if (!pool)
+      gst_query_parse_allocation (query, &outcaps, NULL);
 
     update_pool = TRUE;
   } else {
@@ -265,9 +265,10 @@ gst_video_filter_transform (GstBaseTransform * trans, GstBuffer * inbuf,
       goto invalid_buffer;
 
     if (!gst_video_frame_map (&out_frame, &filter->out_info, outbuf,
-            GST_MAP_WRITE | GST_VIDEO_FRAME_MAP_FLAG_NO_REF))
+            GST_MAP_WRITE | GST_VIDEO_FRAME_MAP_FLAG_NO_REF)) {
+      gst_video_frame_unmap (&in_frame);
       goto invalid_buffer;
-
+    }
     res = fclass->transform_frame (filter, &in_frame, &out_frame);
 
     gst_video_frame_unmap (&out_frame);

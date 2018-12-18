@@ -20,9 +20,12 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include <unistd.h>
+#ifdef HAVE_CONFIG_H
+#include "config.h"
+#endif
 
 #include <gst/check/gstcheck.h>
+#include <gst/check/gstharness.h>
 
 #if G_BYTE_ORDER == G_BIG_ENDIAN
 #define AFORMAT "S16BE"
@@ -341,6 +344,7 @@ run_getcaps_check (GstCaps * filter, GstCaps * downstream_caps,
   GstElement *capsfilter;
   GstPad *sinkpad;
   GstCaps *result;
+  gchar *caps_str;
 
   opusdec = gst_element_factory_make ("opusdec", NULL);
   capsfilter = gst_element_factory_make ("capsfilter", NULL);
@@ -351,8 +355,9 @@ run_getcaps_check (GstCaps * filter, GstCaps * downstream_caps,
     g_object_set (capsfilter, "caps", downstream_caps, NULL);
   result = gst_pad_query_caps (sinkpad, filter);
   result = remove_extra_caps_fields (result);
+  caps_str = gst_caps_to_string (result);
   fail_unless (gst_caps_is_equal (expected_result, result),
-      "Unexpected output caps: %s", gst_caps_to_string (result));
+      "Unexpected output caps: %s", caps_str);
 
   if (filter)
     gst_caps_unref (filter);
@@ -363,6 +368,7 @@ run_getcaps_check (GstCaps * filter, GstCaps * downstream_caps,
   gst_object_unref (sinkpad);
   gst_object_unref (opusdec);
   gst_object_unref (capsfilter);
+  g_free (caps_str);
 }
 
 static void
@@ -420,6 +426,68 @@ GST_START_TEST (test_opusdec_getcaps)
 
 GST_END_TEST;
 
+GST_START_TEST (test_opus_decode_plc_timestamps_with_fec)
+{
+  GstBuffer *buf;
+  GstHarness *h =
+      gst_harness_new_parse ("opusdec use-inband-fec=TRUE plc=TRUE");
+  GstClockTime dur0 = GST_MSECOND * 35 / 10;    /* because of lookahead */
+  GstClockTime dur = GST_MSECOND * 10;
+
+  gst_harness_add_src_parse (h,
+      "audiotestsrc samplesperbuffer=480 is-live=TRUE ! "
+      "opusenc frame-size=10 inband-fec=TRUE", TRUE);
+
+  /* Push first buffer from encoder to decoder. It will not be decoded yet
+   * because of the delay introduced by FEC */
+  gst_harness_src_crank_and_push_many (h, 1, 1);
+  fail_unless_equals_int (0, gst_harness_buffers_received (h));
+
+  /* Drop second buffer from encoder and send a GAP event to decoder
+   * instead with 2x duration */
+  gst_harness_src_crank_and_push_many (h, 1, 0);
+  fail_unless (buf = gst_harness_pull (h->src_harness));
+  fail_unless (gst_harness_push_event (h,
+          gst_event_new_gap (GST_BUFFER_PTS (buf),
+              GST_BUFFER_DURATION (buf) * 2)));
+  gst_buffer_unref (buf);
+
+  /* Extract first buffer from decoder and verify timstamps */
+  fail_unless (buf = gst_harness_pull (h));
+  fail_unless_equals_int64 (0, GST_BUFFER_PTS (buf));
+  fail_unless_equals_int64 (dur0, GST_BUFFER_DURATION (buf));
+  fail_unless (GST_BUFFER_FLAG_IS_SET (buf, GST_BUFFER_FLAG_DISCONT));
+  gst_buffer_unref (buf);
+
+  /* Third buffer is pushed from encoder to decoder with DISCONT set */
+  gst_harness_src_crank_and_push_many (h, 1, 0);
+  fail_unless (buf = gst_harness_pull (h->src_harness));
+  GST_BUFFER_FLAG_SET (buf, GST_BUFFER_FLAG_DISCONT);
+  gst_harness_push (h, buf);
+
+  /* Extract second (concealed) buffer from decoder and verify timestamp
+     and the 2x duration */
+  fail_unless (buf = gst_harness_pull (h));
+  fail_unless_equals_int64 (dur0, GST_BUFFER_PTS (buf));
+  fail_unless_equals_int64 (dur * 2, GST_BUFFER_DURATION (buf));
+  fail_if (GST_BUFFER_FLAG_IS_SET (buf, GST_BUFFER_FLAG_DISCONT));
+  gst_buffer_unref (buf);
+
+  /* Push fourth buffer from encoder to decoder as normal */
+  gst_harness_src_crank_and_push_many (h, 1, 1);
+
+  /* Extract third buffer from decoder and verify timestamps */
+  fail_unless (buf = gst_harness_pull (h));
+  fail_unless_equals_int64 (dur0 + 1 * dur, GST_BUFFER_PTS (buf));
+  fail_unless_equals_int64 (dur, GST_BUFFER_DURATION (buf));
+  fail_if (GST_BUFFER_FLAG_IS_SET (buf, GST_BUFFER_FLAG_DISCONT));
+  gst_buffer_unref (buf);
+
+  gst_harness_teardown (h);
+}
+
+GST_END_TEST;
+
 static Suite *
 opus_suite (void)
 {
@@ -433,6 +501,7 @@ opus_suite (void)
   tcase_add_test (tc_chain, test_opus_encode_samples);
   tcase_add_test (tc_chain, test_opus_encode_properties);
   tcase_add_test (tc_chain, test_opusdec_getcaps);
+  tcase_add_test (tc_chain, test_opus_decode_plc_timestamps_with_fec);
 
   return s;
 }

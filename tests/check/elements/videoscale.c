@@ -29,6 +29,8 @@
 /* kids, don't do this at home, skipping checks is *BAD* */
 #define LINK_CHECK_FLAGS GST_PAD_LINK_CHECK_NOTHING
 
+#ifndef VSCALE_TEST_GROUP
+
 static guint
 get_num_formats (void)
 {
@@ -156,6 +158,8 @@ GST_START_TEST (test_template_formats)
 }
 
 GST_END_TEST;
+
+#endif /* !defined(VSCALE_TEST_GROUP) */
 
 static GstCaps **
 videoscale_get_allowed_caps_for_method (int method)
@@ -307,6 +311,8 @@ run_test (const GstCaps * caps, gint src_width, gint src_height,
   gst_object_unref (bus);
 }
 
+#ifndef VSCALE_TEST_GROUP
+
 static void
 on_sink_handoff_passthrough (GstElement * element, GstBuffer * buffer,
     GstPad * pad, gpointer user_data)
@@ -409,6 +415,7 @@ GST_START_TEST (test_passthrough_method_3)
 }
 
 GST_END_TEST;
+#endif /* !defined(VSCALE_TEST_GROUP) */
 
 #define CREATE_TEST(name,method,src_width,src_height,dest_width,dest_height) \
 GST_START_TEST (name) \
@@ -434,6 +441,7 @@ GST_START_TEST (name) \
 \
 GST_END_TEST;
 
+#if defined(VSCALE_TEST_GROUP) && VSCALE_TEST_GROUP == 1
 CREATE_TEST (test_downscale_640x480_320x240_method_0, 0, 640, 480, 320, 240);
 CREATE_TEST (test_downscale_640x480_320x240_method_1, 1, 640, 480, 320, 240);
 CREATE_TEST (test_downscale_640x480_320x240_method_2, 2, 640, 480, 320, 240);
@@ -442,6 +450,7 @@ CREATE_TEST (test_upscale_320x240_640x480_method_0, 0, 320, 240, 640, 480);
 CREATE_TEST (test_upscale_320x240_640x480_method_1, 1, 320, 240, 640, 480);
 CREATE_TEST (test_upscale_320x240_640x480_method_2, 2, 320, 240, 640, 480);
 CREATE_TEST (test_upscale_320x240_640x480_method_3, 3, 320, 240, 640, 480);
+#elif defined(VSCALE_TEST_GROUP) && VSCALE_TEST_GROUP == 2
 CREATE_TEST (test_downscale_640x480_1x1_method_0, 0, 640, 480, 1, 1);
 CREATE_TEST (test_downscale_640x480_1x1_method_1, 1, 640, 480, 1, 1);
 CREATE_TEST (test_downscale_640x480_1x1_method_2, 2, 640, 480, 1, 1);
@@ -450,6 +459,7 @@ CREATE_TEST (test_upscale_1x1_640x480_method_0, 0, 1, 1, 640, 480);
 CREATE_TEST (test_upscale_1x1_640x480_method_1, 1, 1, 1, 640, 480);
 CREATE_TEST (test_upscale_1x1_640x480_method_2, 2, 1, 1, 640, 480);
 CREATE_TEST (test_upscale_1x1_640x480_method_3, 3, 1, 1, 640, 480);
+#elif defined(VSCALE_TEST_GROUP) && VSCALE_TEST_GROUP == 3
 CREATE_TEST (test_downscale_641x481_111x30_method_0, 0, 641, 481, 111, 30);
 CREATE_TEST (test_downscale_641x481_111x30_method_1, 1, 641, 481, 111, 30);
 CREATE_TEST (test_downscale_641x481_111x30_method_2, 2, 641, 481, 111, 30);
@@ -458,6 +468,7 @@ CREATE_TEST (test_upscale_111x30_641x481_method_0, 0, 111, 30, 641, 481);
 CREATE_TEST (test_upscale_111x30_641x481_method_1, 1, 111, 30, 641, 481);
 CREATE_TEST (test_upscale_111x30_641x481_method_2, 2, 111, 30, 641, 481);
 CREATE_TEST (test_upscale_111x30_641x481_method_3, 2, 111, 30, 641, 481);
+#elif defined(VSCALE_TEST_GROUP) && VSCALE_TEST_GROUP == 4
 CREATE_TEST (test_downscale_641x481_30x111_method_0, 0, 641, 481, 30, 111);
 CREATE_TEST (test_downscale_641x481_30x111_method_1, 1, 641, 481, 30, 111);
 CREATE_TEST (test_downscale_641x481_30x111_method_2, 2, 641, 481, 30, 111);
@@ -466,6 +477,7 @@ CREATE_TEST (test_upscale_30x111_641x481_method_0, 0, 30, 111, 641, 481);
 CREATE_TEST (test_upscale_30x111_641x481_method_1, 1, 30, 111, 641, 481);
 CREATE_TEST (test_upscale_30x111_641x481_method_2, 2, 30, 111, 641, 481);
 CREATE_TEST (test_upscale_30x111_641x481_method_3, 3, 30, 111, 641, 481);
+#elif defined(VSCALE_TEST_GROUP) && VSCALE_TEST_GROUP == 5
 CREATE_TEST (test_downscale_640x480_320x1_method_0, 0, 640, 480, 320, 1);
 CREATE_TEST (test_downscale_640x480_320x1_method_1, 1, 640, 480, 320, 1);
 CREATE_TEST (test_downscale_640x480_320x1_method_2, 2, 640, 480, 320, 1);
@@ -474,6 +486,7 @@ CREATE_TEST (test_upscale_320x1_640x480_method_0, 0, 320, 1, 640, 480);
 CREATE_TEST (test_upscale_320x1_640x480_method_1, 1, 320, 1, 640, 480);
 CREATE_TEST (test_upscale_320x1_640x480_method_2, 2, 320, 1, 640, 480);
 CREATE_TEST (test_upscale_320x1_640x480_method_3, 3, 320, 1, 640, 480);
+#elif defined(VSCALE_TEST_GROUP) && VSCALE_TEST_GROUP == 6
 CREATE_TEST (test_downscale_640x480_1x240_method_0, 0, 640, 480, 1, 240);
 CREATE_TEST (test_downscale_640x480_1x240_method_1, 1, 640, 480, 1, 240);
 CREATE_TEST (test_downscale_640x480_1x240_method_2, 2, 640, 480, 1, 240);
@@ -482,79 +495,9 @@ CREATE_TEST (test_upscale_1x240_640x480_method_0, 0, 1, 240, 640, 480);
 CREATE_TEST (test_upscale_1x240_640x480_method_1, 1, 1, 240, 640, 480);
 CREATE_TEST (test_upscale_1x240_640x480_method_2, 2, 1, 240, 640, 480);
 CREATE_TEST (test_upscale_1x240_640x480_method_3, 3, 1, 240, 640, 480);
+#endif
 
-typedef struct
-{
-  gint width, height;
-  gint par_n, par_d;
-  gboolean ok;
-  GMainLoop *loop;
-} TestNegotiationData;
-
-static void
-_test_negotiation_message (GstBus * bus, GstMessage * message,
-    TestNegotiationData * data)
-{
-  GError *err = NULL;
-  gchar *debug;
-
-  switch (GST_MESSAGE_TYPE (message)) {
-    case GST_MESSAGE_ERROR:
-      gst_message_parse_error (message, &err, &debug);
-      gst_object_default_error (GST_MESSAGE_SRC (message), err, debug);
-      g_error_free (err);
-      g_free (debug);
-      g_assert_not_reached ();
-      break;
-    case GST_MESSAGE_WARNING:
-      gst_message_parse_warning (message, &err, &debug);
-      gst_object_default_error (GST_MESSAGE_SRC (message), err, debug);
-      g_error_free (err);
-      g_free (debug);
-      g_assert_not_reached ();
-      break;
-    case GST_MESSAGE_EOS:
-      g_main_loop_quit (data->loop);
-      break;
-    default:
-      break;
-  }
-}
-
-static void
-_test_negotiation_notify_caps (GObject * src, GParamSpec * pspec,
-    TestNegotiationData * data)
-{
-  GstCaps *caps;
-  GstStructure *s;
-  gint width, height;
-  gint par_n = 0, par_d = 0;
-
-  g_object_get (src, "caps", &caps, NULL);
-  if (caps == NULL)
-    return;
-
-  s = gst_caps_get_structure (caps, 0);
-
-  fail_unless (gst_structure_get_int (s, "width", &width));
-  fail_unless (gst_structure_get_int (s, "height", &height));
-  fail_unless (gst_structure_get_fraction (s, "pixel-aspect-ratio", &par_n,
-          &par_d) || (data->par_n == 1 && data->par_d == 1));
-
-  gst_caps_unref (caps);
-
-  fail_unless_equals_int (width, data->width);
-  fail_unless_equals_int (height, data->height);
-  if (par_n != 0 || par_d != 0) {
-    fail_unless_equals_int (par_n, data->par_n);
-    fail_unless_equals_int (par_d, data->par_d);
-  }
-
-  data->ok = (width == data->width) && (height == data->height)
-      && (par_n == data->par_n) && (par_d == data->par_d);
-
-  g_main_loop_quit (data->loop);
-}
+#ifndef VSCALE_TEST_GROUP
 
 static void
 _test_negotiation (const gchar * src_templ, const gchar * sink_templ,
@@ -562,10 +505,7 @@ _test_negotiation (const gchar * src_templ, const gchar * sink_templ,
 {
   GstElement *pipeline;
   GstElement *src, *capsfilter1, *scale, *capsfilter2, *sink;
-  GstBus *bus;
-  GMainLoop *loop;
   GstCaps *caps;
-  TestNegotiationData data = { 0, 0, 0, 0, FALSE, NULL };
   GstPad *pad;
 
   GST_DEBUG ("Running test for src templ caps '%s' and sink templ caps '%s'",
@@ -576,7 +516,7 @@ _test_negotiation (const gchar * src_templ, const gchar * sink_templ,
 
   src = gst_element_factory_make ("videotestsrc", "src");
   fail_unless (src != NULL);
-  g_object_set (G_OBJECT (src), "num-buffers", 1, NULL);
+  g_object_set (G_OBJECT (src), "num-buffers", 1, "pattern", 2, NULL);
 
   capsfilter1 = gst_element_factory_make ("capsfilter", "filter1");
   fail_unless (capsfilter1 != NULL);
@@ -595,15 +535,8 @@ _test_negotiation (const gchar * src_templ, const gchar * sink_templ,
   g_object_set (G_OBJECT (capsfilter2), "caps", caps, NULL);
   gst_caps_unref (caps);
 
-  pad = gst_element_get_static_pad (capsfilter2, "sink");
-  fail_unless (pad != NULL);
-  g_signal_connect (pad, "notify::caps",
-      G_CALLBACK (_test_negotiation_notify_caps), &data);
-  gst_object_unref (pad);
-
   sink = gst_element_factory_make ("fakesink", "sink");
   fail_unless (sink != NULL);
-  g_object_set (sink, "async", FALSE, NULL);
 
   gst_bin_add_many (GST_BIN (pipeline), src, capsfilter1, scale, capsfilter2,
       sink, NULL);
@@ -617,36 +550,47 @@ _test_negotiation (const gchar * src_templ, const gchar * sink_templ,
   fail_unless (gst_element_link_pads_full (capsfilter2, "src", sink, "sink",
           LINK_CHECK_FLAGS));
 
-  loop = g_main_loop_new (NULL, FALSE);
+  fail_unless_equals_int (gst_element_set_state (pipeline, GST_STATE_PAUSED),
+      GST_STATE_CHANGE_ASYNC);
 
-  bus = gst_element_get_bus (pipeline);
-  fail_unless (bus != NULL);
-  gst_bus_add_signal_watch (bus);
+  /* Wait for pipeline to preroll, at which point negotiation is finished */
+  fail_unless_equals_int (gst_element_get_state (pipeline, NULL, NULL, -1),
+      GST_STATE_CHANGE_SUCCESS);
 
-  data.loop = loop;
-  data.width = width;
-  data.height = height;
-  data.par_n = par_n;
-  data.par_d = par_d;
-  data.ok = FALSE;
+  /* Get negotiated caps */
+  pad = gst_element_get_static_pad (capsfilter2, "sink");
+  fail_unless (pad != NULL);
+  caps = gst_pad_get_current_caps (pad);
+  fail_unless (caps != NULL);
+  gst_object_unref (pad);
 
-  g_signal_connect (bus, "message", G_CALLBACK (_test_negotiation_message),
-      &data);
+  /* Check negotiated caps */
+  {
+    gint out_par_n = 0, out_par_d = 0;
+    gint out_width, out_height;
+    GstStructure *s;
 
-  gst_object_unref (bus);
+    s = gst_caps_get_structure (caps, 0);
 
-  fail_unless (gst_element_set_state (pipeline,
-          GST_STATE_PLAYING) == GST_STATE_CHANGE_SUCCESS);
+    fail_unless (gst_structure_get_int (s, "width", &out_width));
+    fail_unless (gst_structure_get_int (s, "height", &out_height));
+    fail_unless (gst_structure_get_fraction (s, "pixel-aspect-ratio",
+            &out_par_n, &out_par_d) || (par_n == 1 && par_d == 1));
 
-  g_main_loop_run (loop);
+    fail_unless_equals_int (width, out_width);
+    fail_unless_equals_int (height, out_height);
+    if (par_n != 0 || par_d != 0) {
+      fail_unless_equals_int (par_n, out_par_n);
+      fail_unless_equals_int (par_d, out_par_d);
+    }
+  }
+  gst_caps_unref (caps);
 
-  fail_unless (data.ok == TRUE);
-
+  /* clean up */
   fail_unless (gst_element_set_state (pipeline,
           GST_STATE_NULL) == GST_STATE_CHANGE_SUCCESS);
 
   gst_object_unref (pipeline);
-  g_main_loop_unref (loop);
 }
 
 GST_START_TEST (test_negotiation)
@@ -809,8 +753,7 @@ gst_test_reverse_negotiation_sink_class_init (GstTestReverseNegotiationSinkClass
       "Test Reverse Negotiation Sink",
       "Sink",
       "Some test sink", "Sebastian Dröge <sebastian.droege@collabora.co.uk>");
-  gst_element_class_add_pad_template (gstelement_class,
-      gst_static_pad_template_get (&sinktemplate));
+  gst_element_class_add_static_pad_template (gstelement_class, &sinktemplate);
 
 #if 0
   gstbase_sink_class->buffer_alloc =
@@ -973,6 +916,8 @@ GST_START_TEST (test_basetransform_negotiation)
 
 GST_END_TEST;
 
+#endif /* !defined(VSCALE_TEST_GROUP) */
+
 static Suite *
 videoscale_suite (void)
 {
@@ -981,11 +926,18 @@ videoscale_suite (void)
 
   suite_add_tcase (s, tc_chain);
   tcase_set_timeout (tc_chain, 180);
+#ifndef VSCALE_TEST_GROUP
   tcase_add_test (tc_chain, test_template_formats);
   tcase_add_test (tc_chain, test_passthrough_method_0);
   tcase_add_test (tc_chain, test_passthrough_method_1);
   tcase_add_test (tc_chain, test_passthrough_method_2);
   tcase_add_test (tc_chain, test_passthrough_method_3);
+  tcase_add_test (tc_chain, test_negotiation);
+#if 0
+  tcase_add_test (tc_chain, test_reverse_negotiation);
+#endif
+  tcase_add_test (tc_chain, test_basetransform_negotiation);
+#elif VSCALE_TEST_GROUP == 1
   tcase_add_test (tc_chain, test_downscale_640x480_320x240_method_0);
   tcase_add_test (tc_chain, test_downscale_640x480_320x240_method_1);
   tcase_add_test (tc_chain, test_downscale_640x480_320x240_method_2);
@@ -994,6 +946,7 @@ videoscale_suite (void)
   tcase_add_test (tc_chain, test_upscale_320x240_640x480_method_1);
   tcase_add_test (tc_chain, test_upscale_320x240_640x480_method_2);
   tcase_add_test (tc_chain, test_upscale_320x240_640x480_method_3);
+#elif VSCALE_TEST_GROUP == 2
   tcase_add_test (tc_chain, test_downscale_640x480_1x1_method_0);
   tcase_add_test (tc_chain, test_downscale_640x480_1x1_method_1);
   tcase_add_test (tc_chain, test_downscale_640x480_1x1_method_2);
@@ -1002,6 +955,7 @@ videoscale_suite (void)
   tcase_add_test (tc_chain, test_upscale_1x1_640x480_method_1);
   tcase_add_test (tc_chain, test_upscale_1x1_640x480_method_2);
   tcase_add_test (tc_chain, test_upscale_1x1_640x480_method_3);
+#elif VSCALE_TEST_GROUP == 3
   tcase_add_test (tc_chain, test_downscale_641x481_111x30_method_0);
   tcase_add_test (tc_chain, test_downscale_641x481_111x30_method_1);
   tcase_add_test (tc_chain, test_downscale_641x481_111x30_method_2);
@@ -1010,6 +964,7 @@ videoscale_suite (void)
   tcase_add_test (tc_chain, test_upscale_111x30_641x481_method_1);
   tcase_add_test (tc_chain, test_upscale_111x30_641x481_method_2);
   tcase_add_test (tc_chain, test_upscale_111x30_641x481_method_3);
+#elif VSCALE_TEST_GROUP == 4
   tcase_add_test (tc_chain, test_downscale_641x481_30x111_method_0);
   tcase_add_test (tc_chain, test_downscale_641x481_30x111_method_1);
   tcase_add_test (tc_chain, test_downscale_641x481_30x111_method_2);
@@ -1018,6 +973,7 @@ videoscale_suite (void)
   tcase_add_test (tc_chain, test_upscale_30x111_641x481_method_1);
   tcase_add_test (tc_chain, test_upscale_30x111_641x481_method_2);
   tcase_add_test (tc_chain, test_upscale_30x111_641x481_method_3);
+#elif VSCALE_TEST_GROUP == 5
   tcase_add_test (tc_chain, test_downscale_640x480_320x1_method_0);
   tcase_add_test (tc_chain, test_downscale_640x480_320x1_method_1);
   tcase_add_test (tc_chain, test_downscale_640x480_320x1_method_2);
@@ -1026,6 +982,7 @@ videoscale_suite (void)
   tcase_add_test (tc_chain, test_upscale_320x1_640x480_method_1);
   tcase_add_test (tc_chain, test_upscale_320x1_640x480_method_2);
   tcase_skip_broken_test (tc_chain, test_upscale_320x1_640x480_method_3);
+#elif VSCALE_TEST_GROUP == 6
   tcase_add_test (tc_chain, test_downscale_640x480_1x240_method_0);
   tcase_add_test (tc_chain, test_downscale_640x480_1x240_method_1);
   tcase_add_test (tc_chain, test_downscale_640x480_1x240_method_2);
@@ -1034,13 +991,28 @@ videoscale_suite (void)
   tcase_add_test (tc_chain, test_upscale_1x240_640x480_method_1);
   tcase_add_test (tc_chain, test_upscale_1x240_640x480_method_2);
   tcase_add_test (tc_chain, test_upscale_1x240_640x480_method_3);
-  tcase_add_test (tc_chain, test_negotiation);
-#if 0
-  tcase_add_test (tc_chain, test_reverse_negotiation);
 #endif
-  tcase_add_test (tc_chain, test_basetransform_negotiation);
 
   return s;
 }
 
-GST_CHECK_MAIN (videoscale);
+/* NOTE:
+ * We need to do the filename dance below in order to avoid having
+ * multiple parallel tests (identified by VSCALE_TEST_GROUP) going
+ * to the same output xml file (when using GST_CHECK_XML) */
+int
+main (int argc, char **argv)
+{
+  Suite *s;
+
+  gst_check_init (&argc, &argv);
+  s = videoscale_suite ();
+#ifndef VSCALE_TEST_GROUP
+#define FULL_RUN_NAME __FILE__
+#else
+#define STR_HELPER(x) #x
+#define STR(x) STR_HELPER(x)
+#define FULL_RUN_NAME __FILE__ STR(VSCALE_TEST_GROUP)".c"
+#endif
+  return gst_check_run_suite (s, "videoscale", FULL_RUN_NAME);
+}

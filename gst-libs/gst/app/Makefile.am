@@ -2,19 +2,20 @@ lib_LTLIBRARIES = libgstapp-@GST_API_VERSION@.la
 
 glib_enum_define = GST_APP
 glib_gen_prefix = __gst_app
-glib_gen_basename = gstapp
+glib_gen_basename = app
+glib_gen_decl_banner=GST_APP_API
+glib_gen_decl_include=\#include <gst/app/app-prelude.h>
+
+glib_enum_headers = gstappsrc.h
+
+built_sources = app-enumtypes.c
+built_headers = app-enumtypes.h
+BUILT_SOURCES = $(built_sources) $(built_headers)
 
 include $(top_srcdir)/common/gst-glib-gen.mak
 
-built_sources = gstapp-marshal.c
-built_headers = gstapp-marshal.h
-
-BUILT_SOURCES = $(built_sources) $(built_headers)
-
-nodist_libgstapp_@GST_API_VERSION@_la_SOURCES = \
-             $(built_sources)
-
-libgstapp_@GST_API_VERSION@_la_SOURCES = gstappsrc.c gstappsink.c 
+libgstapp_@GST_API_VERSION@_la_SOURCES = gstappsrc.c gstappsink.c
+nodist_libgstapp_@GST_API_VERSION@_la_SOURCES = $(BUILT_SOURCES)
 libgstapp_@GST_API_VERSION@_la_CFLAGS = $(GST_PLUGINS_BASE_CFLAGS) \
 	$(GST_BASE_CFLAGS) $(GST_CFLAGS)
 libgstapp_@GST_API_VERSION@_la_LIBADD = $(GST_BASE_LIBS)
@@ -23,23 +24,25 @@ libgstapp_@GST_API_VERSION@_la_LDFLAGS = $(GST_LIB_LDFLAGS) $(GST_ALL_LDFLAGS) $
 libgstapp_@GST_API_VERSION@includedir = $(includedir)/gstreamer-@GST_API_VERSION@/gst/app
 libgstapp_@GST_API_VERSION@include_HEADERS = \
 	app.h \
+	app-prelude.h \
 	gstappsrc.h \
 	gstappsink.h
+nodist_libgstapp_@GST_API_VERSION@include_HEADERS = app-enumtypes.h
 
 CLEANFILES = $(BUILT_SOURCES)
-
-EXTRA_DIST = gstapp-marshal.list
 
 if HAVE_INTROSPECTION
 BUILT_GIRSOURCES = GstApp-@GST_API_VERSION@.gir
 
 gir_headers=$(patsubst %,$(srcdir)/%, $(libgstapp_@GST_API_VERSION@include_HEADERS))
+gir_headers+=$(patsubst %,$(builddir)/%, $(nodist_libgstapp_@GST_API_VERSION@include_HEADERS))
 gir_sources=$(patsubst %,$(srcdir)/%, $(libgstapp_@GST_API_VERSION@_la_SOURCES))
 gir_sources+=$(patsubst %,$(builddir)/%, $(nodist_libgstapp_@GST_API_VERSION@_la_SOURCES))
 
 GstApp-@GST_API_VERSION@.gir: $(INTROSPECTION_SCANNER) libgstapp-@GST_API_VERSION@.la
 	$(AM_V_GEN)PKG_CONFIG_PATH="$(GST_PKG_CONFIG_PATH)" GI_SCANNER_DISABLE_CACHE=yes\
-		GST_PLUGIN_SYSTEM_PATH_1_0="" GST_PLUGIN_PATH_1_0="" GST_REGISTRY_UPDATE=no \
+		GST_PLUGIN_SYSTEM_PATH_1_0="" GST_PLUGIN_PATH_1_0="" GST_REGISTRY_DISABLE=yes \
+		CPPFLAGS="$(CPPFLAGS)" CFLAGS="$(CFLAGS)" LDFLAGS="$(LDFLAGS)" CC="$(CC)" PKG_CONFIG="$(PKG_CONFIG)" DLLTOOL="$(DLLTOOL)" \
 		$(INTROSPECTION_SCANNER) -v --namespace GstApp \
 		--nsversion=@GST_API_VERSION@ \
 		--identifier-prefix=Gst \

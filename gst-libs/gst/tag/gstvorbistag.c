@@ -21,16 +21,14 @@
 
 /**
  * SECTION:gsttagvorbis
+ * @title: GstVorbisTag
  * @short_description: tag mappings and support functions for plugins
  *                     dealing with vorbiscomments
  * @see_also: #GstTagList
  *
- * <refsect2>
- * <para>
  * Contains various utility functions for plugins to parse or create
  * vorbiscomments and map them to and from #GstTagList<!-- -->s.
- * </para>
- * </refsect2>
+ *
  */
 
 #ifdef HAVE_CONFIG_H
@@ -405,12 +403,12 @@ decode_failed:
 
 /**
  * gst_tag_list_from_vorbiscomment:
- * @data: data to convert
+ * @data: (array length=size): data to convert
  * @size: size of @data
- * @id_data: identification data at start of stream
+ * @id_data: (array length=id_data_length): identification data at start of stream
  * @id_data_length: length of identification data
- * @vendor_string: pointer to a string that should take the vendor string
- *                 of this vorbis comment or NULL if you don't need it.
+ * @vendor_string: (out) (optional): pointer to a string that should take the
+ *     vendor string of this vorbis comment or NULL if you don't need it.
  *
  * Creates a new tag list that contains the information parsed out of a
  * vorbiscomment packet.
@@ -482,7 +480,7 @@ gst_tag_list_from_vorbiscomment (const guint8 * data, gsize size,
       gst_vorbis_tag_add_coverart (list, value, value_len);
     } else if (g_ascii_strcasecmp (cur, "METADATA_BLOCK_PICTURE") == 0) {
       gst_vorbis_tag_add_metadata_block_picture (list, value, value_len);
-    } else {
+    } else if (g_utf8_validate (cur, -1, NULL)) {
       gst_vorbis_tag_add (list, cur, value);
     }
     g_free (cur);
@@ -491,6 +489,10 @@ gst_tag_list_from_vorbiscomment (const guint8 * data, gsize size,
   return list;
 
 error:
+  if (vendor_string && *vendor_string) {
+    g_free (*vendor_string);
+    *vendor_string = NULL;
+  }
   gst_tag_list_unref (list);
   return NULL;
 #undef ADVANCE
@@ -499,10 +501,10 @@ error:
 /**
  * gst_tag_list_from_vorbiscomment_buffer:
  * @buffer: buffer to convert
- * @id_data: identification data at start of stream
+ * @id_data: (array length=id_data_length): identification data at start of stream
  * @id_data_length: length of identification data
- * @vendor_string: pointer to a string that should take the vendor string
- *                 of this vorbis comment or NULL if you don't need it.
+ * @vendor_string: (out) (optional): pointer to a string that should take the
+ *     vendor string of this vorbis comment or NULL if you don't need it.
  *
  * Creates a new tag list that contains the information parsed out of a
  * vorbiscomment packet.
@@ -775,9 +777,9 @@ write_one_tag (const GstTagList * list, const gchar * tag, gpointer user_data)
 /**
  * gst_tag_list_to_vorbiscomment_buffer:
  * @list: tag list to convert
- * @id_data: identification data at start of stream
+ * @id_data: (array length=id_data_length): identification data at start of stream
  * @id_data_length: length of identification data, may be 0 if @id_data is NULL
- * @vendor_string: string that describes the vendor string or NULL
+ * @vendor_string: (nullable): string that describes the vendor string or NULL
  *
  * Creates a new vorbiscomment buffer from a tag list.
  *

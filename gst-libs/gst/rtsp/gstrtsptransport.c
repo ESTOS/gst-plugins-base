@@ -43,8 +43,9 @@
 
 /**
  * SECTION:gstrtsptransport
+ * @title: GstRTSPRange
  * @short_description: dealing with RTSP transports
- *  
+ *
  * Provides helper functions to deal with RTSP transport strings.
  */
 
@@ -146,7 +147,7 @@ G_STMT_START {                                    \
  * Allocate a new initialized #GstRTSPTransport. Use gst_rtsp_transport_free()
  * after usage.
  *
- * Returns: a #GstRTSPResult. 
+ * Returns: a #GstRTSPResult.
  */
 GstRTSPResult
 gst_rtsp_transport_new (GstRTSPTransport ** transport)
@@ -168,7 +169,7 @@ gst_rtsp_transport_new (GstRTSPTransport ** transport)
  *
  * Initialize @transport so that it can be used.
  *
- * Returns: #GST_RTSP_OK. 
+ * Returns: #GST_RTSP_OK.
  */
 GstRTSPResult
 gst_rtsp_transport_init (GstRTSPTransport * transport)
@@ -273,7 +274,7 @@ get_default_lower_trans (GstRTSPTransport * transport)
 /**
  * gst_rtsp_transport_get_manager:
  * @trans: a #GstRTSPTransMode
- * @manager: location to hold the result
+ * @manager: (out) (nullable) (transfer none): location to hold the result
  * @option: option index.
  *
  * Get the #GstElement that can handle the buffers transported over @trans.
@@ -281,10 +282,10 @@ get_default_lower_trans (GstRTSPTransport * transport)
  * It is possible that there are several managers available, use @option to
  * selected one.
  *
- * @manager will contain an element name or #NULL when no manager is
+ * @manager will contain an element name or %NULL when no manager is
  * needed/available for @trans.
  *
- * Returns: #GST_RTSP_OK. 
+ * Returns: #GST_RTSP_OK.
  */
 GstRTSPResult
 gst_rtsp_transport_get_manager (GstRTSPTransMode trans, const gchar ** manager,
@@ -586,7 +587,7 @@ invalid_transport:
  * Convert @transport into a string that can be used to signal the transport in
  * an RTSP SETUP response.
  *
- * Returns: a string describing the RTSP transport or #NULL when the transport
+ * Returns: a string describing the RTSP transport or %NULL when the transport
  * is invalid.
  */
 gchar *

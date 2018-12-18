@@ -19,35 +19,27 @@
 
 /**
  * SECTION:gstpbutilsmissingplugins
+ * @title: Missing plugins
  * @short_description: Create, recognise and parse missing-plugins messages
  *
- * <refsect2>
- * <para>
  * Functions to create, recognise and parse missing-plugins messages for
  * applications and elements.
- * </para>
- * <para>
+ *
  * Missing-plugin messages are posted on the bus by elements like decodebin
  * or playbin if they can't find an appropriate source element or decoder
  * element. The application can use these messages for two things:
- * <itemizedlist>
- *   <listitem><para>
- *     concise error/problem reporting to the user mentioning what exactly
+ *
+ *   * concise error/problem reporting to the user mentioning what exactly
  *     is missing, see gst_missing_plugin_message_get_description()
- *   </para></listitem>
- *   <listitem><para>
- *     initiate installation of missing plugins, see
+ *
+ *   * initiate installation of missing plugins, see
  *     gst_missing_plugin_message_get_installer_detail() and
  *     gst_install_plugins_async()
- *   </para></listitem>
- * </itemizedlist>
- * </para>
- * <para>
+ *
  * Applications may also create missing-plugin messages themselves to install
  * required elements that are missing, using the install mechanism mentioned
  * above.
- * </para>
- * </refsect2>
+ *
  */
 
 #ifdef HAVE_CONFIG_H
@@ -126,6 +118,7 @@ copy_and_clean_caps (const GstCaps * caps)
    * where template caps usually have the standard MIN - MAX range as value) */
   s = gst_caps_get_structure (ret, 0);
   gst_structure_remove_field (s, "codec_data");
+  gst_structure_remove_field (s, "streamheader");
   gst_structure_remove_field (s, "palette_data");
   gst_structure_remove_field (s, "pixel-aspect-ratio");
   gst_structure_remove_field (s, "framerate");
@@ -141,6 +134,12 @@ copy_and_clean_caps (const GstCaps * caps)
   gst_structure_remove_field (s, "height");
   gst_structure_remove_field (s, "channels");
   gst_structure_remove_field (s, "rate");
+  /* parsed, framed, stream-format and alignment are going to be handled by
+   * parsers and not relevant for decoders/encoders usually */
+  gst_structure_remove_field (s, "parsed");
+  gst_structure_remove_field (s, "framed");
+  gst_structure_remove_field (s, "stream-format");
+  gst_structure_remove_field (s, "alignment");
   /* rtp fields */
   gst_structure_remove_field (s, "config");
   gst_structure_remove_field (s, "clock-rate");
@@ -390,7 +389,7 @@ missing_structure_get_caps_detail (const GstStructure * s, GstCaps ** p_caps)
  * Returns an opaque string containing all the details about the missing
  * element to be passed to an external installer called via
  * gst_install_plugins_async() or gst_install_plugins_sync().
- * 
+ *
  * This function is mainly for applications that call external plugin
  * installation mechanisms using one of the two above-mentioned functions.
  *
@@ -646,7 +645,7 @@ gst_installer_detail_new (gchar * description, const gchar * type,
  * Returns an opaque string containing all the details about the missing
  * element to be passed to an external installer called via
  * gst_install_plugins_async() or gst_install_plugins_sync().
- * 
+ *
  * This function is mainly for applications that call external plugin
  * installation mechanisms using one of the two above-mentioned functions in
  * the case where the application knows exactly what kind of plugin it is
@@ -674,7 +673,7 @@ gst_missing_uri_source_installer_detail_new (const gchar * protocol)
  * Returns an opaque string containing all the details about the missing
  * element to be passed to an external installer called via
  * gst_install_plugins_async() or gst_install_plugins_sync().
- * 
+ *
  * This function is mainly for applications that call external plugin
  * installation mechanisms using one of the two above-mentioned functions in
  * the case where the application knows exactly what kind of plugin it is
@@ -702,7 +701,7 @@ gst_missing_uri_sink_installer_detail_new (const gchar * protocol)
  * Returns an opaque string containing all the details about the missing
  * element to be passed to an external installer called via
  * gst_install_plugins_async() or gst_install_plugins_sync().
- * 
+ *
  * This function is mainly for applications that call external plugin
  * installation mechanisms using one of the two above-mentioned functions in
  * the case where the application knows exactly what kind of plugin it is
@@ -729,7 +728,7 @@ gst_missing_element_installer_detail_new (const gchar * factory_name)
  * Returns an opaque string containing all the details about the missing
  * element to be passed to an external installer called via
  * gst_install_plugins_async() or gst_install_plugins_sync().
- * 
+ *
  * This function is mainly for applications that call external plugin
  * installation mechanisms using one of the two above-mentioned functions in
  * the case where the application knows exactly what kind of plugin it is
@@ -767,7 +766,7 @@ gst_missing_decoder_installer_detail_new (const GstCaps * decode_caps)
  * Returns an opaque string containing all the details about the missing
  * element to be passed to an external installer called via
  * gst_install_plugins_async() or gst_install_plugins_sync().
- * 
+ *
  * This function is mainly for applications that call external plugin
  * installation mechanisms using one of the two above-mentioned functions in
  * the case where the application knows exactly what kind of plugin it is

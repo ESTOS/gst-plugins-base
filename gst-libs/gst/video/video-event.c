@@ -52,7 +52,8 @@ gst_video_event_new_still_frame (gboolean in_still)
 /**
  * gst_video_event_parse_still_frame:
  * @event: A #GstEvent to parse
- * @in_still: A boolean to receive the still-frame status from the event, or NULL
+ * @in_still: (out):
+ *     A boolean to receive the still-frame status from the event, or NULL
  *
  * Parse a #GstEvent, identify if it is a Still Frame event, and
  * return the still-frame state from the event if it is.
@@ -134,7 +135,7 @@ gst_video_event_new_downstream_force_key_unit (GstClockTime timestamp,
  * @count: integer that can be used to number key units
  *
  * Creates a new upstream force key unit event. An upstream force key unit event
- * can be sent to request upstream elements to produce a key unit. 
+ * can be sent to request upstream elements to produce a key unit.
  *
  * @running_time can be set to request a new key unit at a specific
  * running_time. If set to GST_CLOCK_TIME_NONE, upstream elements will produce a
